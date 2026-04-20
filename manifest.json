@@ -1,0 +1,11 @@
+
+{
+  "id": "smart-video-summarizer",
+  "name": "Smart Video Summarizer",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "智能视频摘要插件，支持YouTube/B站字幕抓取、多模型AI摘要、内嵌播放器和时间戳",
+  "author": "kiki",
+  "authorUrl": "",
+  "isDesktopOnly": true
+}

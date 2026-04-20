@@ -1,0 +1,73 @@
+/* 视频链接输入框 */
+.video-url-input {
+    width: 100%;
+    margin-bottom: 10px;
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+}
+.video-modal-button-container {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+.video-modal-button {
+    padding: 6px 12px;
+    cursor: pointer;
+}
+/* 播放器视图 */
+.video-player-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 10px;
+}
+.player-wrapper {
+    flex: 1;
+    min-height: 200px;
+    background-color: #000;
+    border-radius: 8px;
+    overflow: hidden;
+}
+.player-wrapper-loaded {
+    height: 300px;
+}
+.player-wrapper iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+.player-controls {
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    border-top: 1px solid var(--background-modifier-border);
+    align-items: center;
+}
+.player-controls-spacer {
+    flex: 1;
+}
+.player-btn {
+    background: none;
+    border: none;
+    font-size: 1.2em;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+.player-btn:hover {
+    background-color: var(--background-modifier-hover);
+}
+/* 供应商激活高亮 */
+.mod-active-provider {
+    background-color: var(--background-modifier-hover);
+    border-left: 3px solid var(--interactive-accent);
+    padding-left: 10px;
+}
+.provider-modal-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
