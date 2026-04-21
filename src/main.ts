@@ -4,6 +4,31 @@ import { fetchTranscript, fetchTranscriptFallback } from './transcript';
 import { getApiAdapter, ApiCallOptions } from './api';
 import { VIDEO_PLAYER_VIEW_TYPE, VideoPlayerView } from './playerView';
 
+// ========== 常量定义 ==========
+const NOTICE_MESSAGES = {
+    LOADING: '正在处理视频，请稍候...',
+    SUCCESS: '视频摘要生成完成！',
+    NO_VALID_URL: '请先选中一个有效的视频链接',
+    NO_VIDEO_NOTE: '请先打开一个视频摘要笔记',
+    NOT_VIDEO_NOTE: '当前笔记不是视频摘要笔记，无法插入时间戳',
+    NO_TIMESTAMP_HEADING: '未找到时间戳区域，请确认笔记模板正确',
+    TIMESTAMP_INSERTED: '时间戳已插入',
+    SUBTITLE_IMPORT_SUCCESS: '已导入本地字幕，正在生成摘要...',
+    SUBTITLE_FALLBACK: '视频没有有效字幕，正在使用备选方案...',
+    SUBTITLE_IMPORT_PROMPT: '该视频没有字幕，是否导入本地字幕文件？',
+    SUBTITLE_IMPORT_ERROR: '读取字幕文件失败，请检查文件格式',
+    PLAYER_DISABLED: 'Video player is disabled. Enable it in settings.',
+    HISTORY_DELETED: 'History record deleted',
+    HISTORY_CLEARED: 'All history cleared',
+    CONNECTION_SUCCESS: 'Connection successful!',
+    CONNECTION_FAILED: 'Connection failed. Check your API key and base URL.',
+    SAVE_FAILED: 'Save failed: ',
+    ERROR_PREFIX: 'Error: ',
+    GENERATE_FAILED: '生成失败：',
+    NO_TRANSCRIPT_SKIP: '该视频没有字幕，已跳过',
+    NO_TRANSCRIPT_METADATA: '【无法获取字幕，将基于元数据生成摘要】',
+};
+
 // ========== 类型定义 ==========
 interface VideoInfo {
     platform: string;
@@ -25,6 +50,14 @@ interface BiliVideoResponse {
     };
 }
 
+interface VideoNoteFrontmatter {
+    video_url?: string;
+    title?: string;
+    author?: string;
+    platform?: string;
+    created?: string;
+}
+
 interface OldSettings {
     aiProvider?: string;
     geminiApiKey?: string;
@@ -39,7 +72,6 @@ interface OldSettings {
 // ========== 主插件类 ==========
 export default class SmartVideoSummarizerPlugin extends Plugin {
     settings: SmartVideoSummarizerSettings = DEFAULT_SETTINGS;
-    private lastActiveVideoUrl = '';
 
     async onload(): Promise<void> {
         await this.loadSettings();
@@ -48,13 +80,13 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         this.registerView(VIDEO_PLAYER_VIEW_TYPE, (leaf) => new VideoPlayerView(leaf, this));
 
         this.addRibbonIcon('video', '智能视频摘要', () => this.openUrlInputModal());
-        
-        this.addCommand({ 
-            id: 'open-video-summarizer', 
-            name: '打开视频摘要', 
-            callback: () => this.openUrlInputModal() 
+
+        this.addCommand({
+            id: 'open-video-summarizer',
+            name: '打开视频摘要',
+            callback: () => this.openUrlInputModal()
         });
-        
+
         this.addCommand({
             id: 'summarize-from-selected-url',
             name: '从选中的 URL 生成摘要',
@@ -63,39 +95,39 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
                 if (selected && /youtube\.com|youtu\.be|bilibili\.com/.test(selected)) {
                     await this.generateSummaryFromUrl(selected);
                 } else {
-                    new Notice('请先选中一个有效的视频链接');
+                    new Notice(NOTICE_MESSAGES.NO_VALID_URL);
                 }
             }
         });
-        
-        this.addCommand({ 
-            id: 'insert-timestamp', 
-            name: '插入时间戳', 
-            editorCallback: (e: Editor) => this.insertTimestamp(e) 
+
+        this.addCommand({
+            id: 'insert-timestamp-in-video-note',
+            name: '在当前视频摘要笔记中插入时间戳',
+            callback: () => this.insertTimestampInCurrentVideoNote()
         });
-        
+
         this.addCommand({
             id: 'open-video-player',
             name: '打开视频播放器',
             callback: () => this.activatePlayerView()
         });
-        
+
         this.addSettingTab(new SmartVideoSummarizerSettingTab(this.app, this));
-        
+
         this.registerEvent(
-            this.app.workspace.on('editor-paste', (evt: ClipboardEvent, editor: Editor) => {
+            this.app.workspace.on('editor-paste', (evt: ClipboardEvent, _editor: Editor) => {
                 const text = evt.clipboardData?.getData('text');
                 if (text && /youtube\.com|youtu\.be|bilibili\.com/.test(text)) {
                     setTimeout(() => void this.generateSummaryFromUrl(text), 100);
                 }
             })
         );
-        
+
         console.debug('Smart Video Summarizer 插件已加载');
     }
 
-    onunload(): void { 
-        console.debug('插件已卸载'); 
+    onunload(): void {
+        console.debug('插件已卸载');
     }
 
     async loadSettings(): Promise<void> {
@@ -103,8 +135,8 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         if (saved) this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
     }
 
-    async saveSettings(): Promise<void> { 
-        await this.saveData(this.settings); 
+    async saveSettings(): Promise<void> {
+        await this.saveData(this.settings);
     }
 
     private async migrateOldSettings(): Promise<void> {
@@ -143,7 +175,7 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
             });
         }
         if (newProviders.length === 0) newProviders.push(...DEFAULT_SETTINGS.providers);
-        
+
         this.settings.providers = newProviders;
         if (old.aiProvider === 'gemini') this.settings.activeProviderId = 'gemini-default';
         else if (old.aiProvider === 'grok') this.settings.activeProviderId = 'grok-default';
@@ -165,30 +197,82 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         new UrlInputModal(this.app, (url: string) => this.generateSummaryFromUrl(url)).open();
     }
 
+    // ========== 辅助方法 ==========
+    private getSafeTitle(title: string): string {
+        return title.replace(/[\\/:*?"<>|]/g, '_');
+    }
+
+    private getSummaryFilePath(videoInfo: VideoInfo): string {
+        const safeTitle = this.getSafeTitle(videoInfo.title);
+        return `${this.settings.defaultFolder}/${safeTitle}_摘要.md`;
+    }
+
+    private getNoteFilePath(videoInfo: VideoInfo): string {
+        const safeTitle = this.getSafeTitle(videoInfo.title);
+        return `${this.settings.defaultFolder}/${safeTitle}_笔记.md`;
+    }
+
+    private generateNoteContent(videoInfo: VideoInfo, summary?: string, transcript?: string): string {
+        const frontmatter = `---
+title: ${videoInfo.title}
+author: ${videoInfo.author}
+platform: ${videoInfo.platform}
+video_url: ${videoInfo.url}
+created: ${new Date().toISOString()}
+---
+
+# ${videoInfo.title}
+
+> 视频链接：[${videoInfo.url}](${videoInfo.url})
+`;
+        const userSection = `
+---
+## 用户记录区
+
+### 时间戳
+
+### 随手记
+`;
+        const appendix = transcript ? `
+---
+## 附录：视频字幕
+
+${transcript.substring(0, 3000)}${transcript.length > 3000 ? '...' : ''}
+` : '';
+
+        return frontmatter + (summary ? `\n${summary}\n` : '') + userSection + appendix;
+    }
+
+    private getVideoUrlFromNote(file: TFile): string | null {
+        const cache = this.app.metadataCache.getFileCache(file);
+        const frontmatter = cache?.frontmatter as VideoNoteFrontmatter | undefined;
+        return frontmatter?.video_url || null;
+    }
+
     // ========== 视频信息获取 ==========
     private async fetchVideoInfo(url: string): Promise<VideoInfo | null> {
         if (url.includes('youtube.com') || url.includes('youtu.be')) {
             const videoId = this.extractYouTubeId(url);
             if (!videoId) return null;
             try {
-                const res = await requestUrl({ 
-                    url: `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json` 
+                const res = await requestUrl({
+                    url: `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
                 });
                 const data = res.json as YouTubeOEmbedResponse;
-                return { 
-                    platform: 'youtube', 
-                    id: videoId, 
-                    title: data.title, 
-                    author: data.author_name, 
-                    url: `https://www.youtube.com/watch?v=${videoId}` 
+                return {
+                    platform: 'youtube',
+                    id: videoId,
+                    title: data.title,
+                    author: data.author_name,
+                    url: `https://www.youtube.com/watch?v=${videoId}`
                 };
             } catch {
-                return { 
-                    platform: 'youtube', 
-                    id: videoId, 
-                    title: 'YouTube 视频', 
-                    author: 'Unknown', 
-                    url: `https://www.youtube.com/watch?v=${videoId}` 
+                return {
+                    platform: 'youtube',
+                    id: videoId,
+                    title: 'YouTube 视频',
+                    author: 'Unknown',
+                    url: `https://www.youtube.com/watch?v=${videoId}`
                 };
             }
         } else if (url.includes('bilibili.com')) {
@@ -246,7 +330,7 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
             const input = document.createElement('input');
             input.type = 'file';
             input.accept = '.srt,.vtt,.txt,.ass';
-            
+
             input.onchange = async () => {
                 const file = input.files?.[0];
                 if (!file) {
@@ -258,7 +342,7 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
                     const text = this.parseSubtitleFile(content, file.name);
                     resolve(text);
                 } catch {
-                    new Notice('读取字幕文件失败，请检查文件格式');
+                    new Notice(NOTICE_MESSAGES.SUBTITLE_IMPORT_ERROR);
                     resolve(null);
                 }
             };
@@ -299,8 +383,8 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
     private async promptForLocalSubtitle(): Promise<boolean> {
         return new Promise((resolve) => {
             const modal = new ConfirmModal(
-                this.app, 
-                '该视频没有字幕，是否导入本地字幕文件？', 
+                this.app,
+                NOTICE_MESSAGES.SUBTITLE_IMPORT_PROMPT,
                 (result) => resolve(result)
             );
             modal.open();
@@ -309,14 +393,14 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
 
     // ========== 核心流程：生成摘要 ==========
     async generateSummaryFromUrl(url: string): Promise<void> {
-        const loadingNotice = new Notice('正在处理视频，请稍候...', 0);
+        const loadingNotice = new Notice(NOTICE_MESSAGES.LOADING, 0);
         try {
             const videoInfo = await this.fetchVideoInfo(url);
             if (!videoInfo) throw new Error('无法获取视频信息');
 
             let transcript = '';
             let usedFallback = false;
-            
+
             try {
                 const result = await this.fetchTranscriptWithFallback(url);
                 transcript = result.text;
@@ -324,7 +408,7 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
                 if (!transcript || transcript.length < 100) throw new Error('No transcript');
             } catch {
                 if (this.settings.noCaptionStrategy === 'skip') {
-                    throw new Error('该视频没有字幕，已跳过');
+                    throw new Error(NOTICE_MESSAGES.NO_TRANSCRIPT_SKIP);
                 } else if (this.settings.noCaptionStrategy === 'local') {
                     const importLocal = await this.promptForLocalSubtitle();
                     if (importLocal) {
@@ -332,14 +416,14 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
                         if (localText && localText.length > 0) {
                             transcript = localText;
                             usedFallback = true;
-                            new Notice('已导入本地字幕，正在生成摘要...');
+                            new Notice(NOTICE_MESSAGES.SUBTITLE_IMPORT_SUCCESS);
                         }
                     }
                 }
-                
+
                 if (!transcript || transcript.length < 100) {
-                    new Notice('视频没有有效字幕，正在使用备选方案...');
-                    transcript = '【无法获取字幕，将基于元数据生成摘要】';
+                    new Notice(NOTICE_MESSAGES.SUBTITLE_FALLBACK);
+                    transcript = NOTICE_MESSAGES.NO_TRANSCRIPT_METADATA;
                     usedFallback = true;
                 }
             }
@@ -347,15 +431,10 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
             const summary = await this.generateAISummary(videoInfo, transcript, usedFallback);
             const filePath = await this.saveSummaryToNote(videoInfo, summary, transcript);
             await this.addToHistory(videoInfo.url, videoInfo.title, videoInfo.platform, filePath);
-            
-            // 打开笔记并聚焦
+
             await this.app.workspace.openLinkText(filePath, '', false);
-            new Notice('视频摘要生成完成！');
+            new Notice(NOTICE_MESSAGES.SUCCESS);
 
-            // 记录最后视频 URL
-            this.lastActiveVideoUrl = url;
-
-            // 自动打开播放器
             if (this.settings.enableMiniPlayer) {
                 const player = await this.activatePlayerView();
                 if (player) player.loadVideo(url);
@@ -363,7 +442,7 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         } catch (err) {
             const error = err instanceof Error ? err : new Error(String(err));
             console.error('生成摘要时出错:', error);
-            new Notice(`生成失败：${error.message}`);
+            new Notice(`${NOTICE_MESSAGES.GENERATE_FAILED}${error.message}`);
         } finally {
             loadingNotice.hide();
         }
@@ -375,7 +454,7 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         const provider = this.settings.providers.find(p => p.id === this.settings.activeProviderId);
         if (!provider) throw new Error('No active provider found');
         if (!provider.apiKey) throw new Error(`API key missing for provider: ${provider.name}`);
-        
+
         const adapter = getApiAdapter(provider);
         const options: ApiCallOptions = {
             temperature: this.settings.temperature,
@@ -423,193 +502,86 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         const folder = this.settings.defaultFolder;
         const folderExists = this.app.vault.getAbstractFileByPath(folder);
         if (!folderExists) await this.app.vault.createFolder(folder);
-        
-        const safeTitle = videoInfo.title.replace(/[\\/:*?"<>|]/g, '_');
-        const fileName = `${folder}/${safeTitle}_摘要.md`;
-        
-        const content = `---
-title: ${videoInfo.title}
-author: ${videoInfo.author}
-platform: ${videoInfo.platform}
-video_url: ${videoInfo.url}
-created: ${new Date().toISOString()}
----
 
-# ${videoInfo.title}
+        const filePath = this.getSummaryFilePath(videoInfo);
+        const content = this.generateNoteContent(videoInfo, summary, transcript);
 
-> 视频链接：[${videoInfo.url}](${videoInfo.url})
-
-${summary}
-
----
-## 用户记录区
-
-### 时间戳
-
-### 随手记
-
----
-## 附录：视频字幕
-
-${transcript.substring(0, 3000)}${transcript.length > 3000 ? '...' : ''}
-`;
-        
-        const existing = this.app.vault.getAbstractFileByPath(fileName);
+        const existing = this.app.vault.getAbstractFileByPath(filePath);
         if (existing && existing instanceof TFile) {
             await this.app.vault.modify(existing, content);
         } else {
-            await this.app.vault.create(fileName, content);
+            await this.app.vault.create(filePath, content);
         }
-        return fileName;
+        return filePath;
     }
 
     // ========== 笔记管理方法（供播放器调用） ==========
     async getOrCreateSummaryNote(url: string): Promise<string | null> {
         const videoInfo = await this.fetchVideoInfo(url);
         if (!videoInfo) return null;
-        
-        const folder = this.settings.defaultFolder;
-        const safeTitle = videoInfo.title.replace(/[\\/:*?"<>|]/g, '_');
-        const summaryPath = `${folder}/${safeTitle}_摘要.md`;
-        
-        // 优先返回已有的摘要笔记
+
+        const summaryPath = this.getSummaryFilePath(videoInfo);
         if (this.app.vault.getAbstractFileByPath(summaryPath) instanceof TFile) {
             return summaryPath;
         }
-        
-        const notePath = `${folder}/${safeTitle}_笔记.md`;
+
+        const notePath = this.getNoteFilePath(videoInfo);
         if (this.app.vault.getAbstractFileByPath(notePath) instanceof TFile) {
             return notePath;
         }
-        
-        // 都不存在，创建新笔记
+
+        const folder = this.settings.defaultFolder;
         if (!(this.app.vault.getAbstractFileByPath(folder) instanceof TFile)) {
             await this.app.vault.createFolder(folder);
         }
-        
-        const content = `---
-title: ${videoInfo.title}
-author: ${videoInfo.author}
-platform: ${videoInfo.platform}
-video_url: ${videoInfo.url}
-created: ${new Date().toISOString()}
----
 
-# ${videoInfo.title}
-
-> 视频链接：[${videoInfo.url}](${videoInfo.url})
-
----
-## 用户记录区
-
-### 时间戳
-
-### 随手记
-
-`;
+        const content = this.generateNoteContent(videoInfo);
         await this.app.vault.create(notePath, content);
         return notePath;
     }
 
     // ========== 时间戳功能 ==========
-async insertTimestampToCurrentNote(): Promise<void> {
-    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!activeView) {
-        new Notice('请先打开一个笔记');
-        return;
-    }
-    
-    const lastUrl = this.lastActiveVideoUrl;
-    if (!lastUrl) {
-        new Notice('请先通过播放器加载视频');
-        return;
-    }
-    
-    const notePath = await this.getOrCreateSummaryNote(lastUrl);
-    if (!notePath) {
-        new Notice('无法找到或创建笔记');
-        return;
-    }
-    
-    const currentFile = activeView.file;
-    if (currentFile?.path !== notePath) {
-        await this.app.workspace.openLinkText(notePath, '');
-    }
-    
-    const editor = activeView.editor;
-    const content = editor.getValue();
-    const targetHeading = '### 时间戳';
-    const lines = content.split('\n');
-    let headingIndex = lines.findIndex(line => line.includes(targetHeading));
-    
-    if (headingIndex === -1) {
-        new Notice('未找到时间戳区域');
-        return;
-    }
-    
-    const now = new Date();
-    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
-    const timestampMarkdown = `\n[⏱️ ${timeStr}] `;
-    
-    let insertLine = headingIndex + 1;
-    while (insertLine < lines.length && lines[insertLine].trim() !== '') {
-        insertLine++;
-    }
-    
-    editor.replaceRange(timestampMarkdown, { line: insertLine, ch: 0 });
-    editor.setCursor({ line: insertLine, ch: timestampMarkdown.length });
-    editor.scrollIntoView({ from: editor.getCursor(), to: editor.getCursor() });
-    new Notice('时间戳已插入');
-}
+    async insertTimestampInCurrentVideoNote(): Promise<void> {
+        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!activeView) {
+            new Notice(NOTICE_MESSAGES.NO_VIDEO_NOTE);
+            return;
+        }
 
-// ========== 随手记功能 ==========
-async openJottingInCurrentNote(): Promise<void> {
-    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!activeView) {
-        new Notice('请先打开一个笔记');
-        return;
+        const file = activeView.file;
+        if (!file) return;
+
+        const videoUrl = this.getVideoUrlFromNote(file);
+        if (!videoUrl) {
+            new Notice(NOTICE_MESSAGES.NOT_VIDEO_NOTE);
+            return;
+        }
+
+        const editor = activeView.editor;
+        const content = editor.getValue();
+        const targetHeading = "### 时间戳";
+        const lines = content.split('\n');
+        let headingIndex = lines.findIndex(line => line.includes(targetHeading));
+
+        if (headingIndex === -1) {
+            new Notice(NOTICE_MESSAGES.NO_TIMESTAMP_HEADING);
+            return;
+        }
+
+        const now = new Date();
+        const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+        const timestampMarkdown = `\n[⏰ ${timeStr}] `;
+
+        let insertLine = headingIndex + 1;
+        while (insertLine < lines.length && lines[insertLine].trim() !== "") {
+            insertLine++;
+        }
+
+        editor.replaceRange(timestampMarkdown, { line: insertLine, ch: 0 });
+        editor.setCursor({ line: insertLine, ch: timestampMarkdown.length });
+        editor.scrollIntoView({ from: editor.getCursor(), to: editor.getCursor() });
+        new Notice(NOTICE_MESSAGES.TIMESTAMP_INSERTED);
     }
-    
-    const lastUrl = this.lastActiveVideoUrl;
-    if (!lastUrl) {
-        new Notice('请先通过播放器加载视频');
-        return;
-    }
-    
-    const notePath = await this.getOrCreateSummaryNote(lastUrl);
-    if (!notePath) {
-        new Notice('无法找到或创建笔记');
-        return;
-    }
-    
-    const currentFile = activeView.file;
-    if (currentFile?.path !== notePath) {
-        await this.app.workspace.openLinkText(notePath, '');
-    }
-    
-    const editor = activeView.editor;
-    const content = editor.getValue();
-    const targetHeading = '### 随手记';
-    const lines = content.split('\n');
-    let headingIndex = lines.findIndex(line => line.includes(targetHeading));
-    
-    if (headingIndex === -1) {
-        new Notice('未找到随手记区域');
-        return;
-    }
-    
-    let cursorLine = headingIndex + 1;
-    if (cursorLine >= lines.length) {
-        editor.replaceRange('\n', { line: editor.lastLine(), ch: 0 });
-    }
-    if (cursorLine < lines.length && lines[cursorLine].trim() === '') {
-        cursorLine++;
-    }
-    
-    editor.setCursor({ line: cursorLine, ch: 0 });
-    editor.scrollIntoView({ from: editor.getCursor(), to: editor.getCursor() });
-    new Notice('已定位到随手记区域');
-}
 
     // ========== 历史记录 ==========
     async addToHistory(url: string, title: string, platform: string, summaryPath?: string): Promise<void> {
@@ -645,16 +617,6 @@ async openJottingInCurrentNote(): Promise<void> {
         }
         return null;
     }
-
-    // ========== 辅助方法 ==========
-    insertTimestamp(editor: Editor): void {
-        const cursor = editor.getCursor();
-        const line = cursor.line;
-        const lineEnd = editor.getLine(line).length;
-        editor.replaceRange('\n' + `[⏱️ ${new Date().toLocaleTimeString()}]`, { line, ch: lineEnd });
-        editor.setCursor({ line: line + 1, ch: 0 });
-        new Notice('时间戳已插入');
-    }
 }
 
 // ========== URL 输入模态框 ==========
@@ -672,16 +634,16 @@ class UrlInputModal extends Modal {
         const { contentEl } = this;
         contentEl.empty();
         contentEl.createEl('h2', { text: '输入视频链接' });
-        this.inputEl = contentEl.createEl('input', { 
-            type: 'text', 
-            placeholder: '输入 YouTube 或 B站 视频链接...', 
-            cls: 'video-url-input' 
+        this.inputEl = contentEl.createEl('input', {
+            type: 'text',
+            placeholder: '输入 YouTube 或 B站 视频链接...',
+            cls: 'video-url-input'
         });
-        
+
         const btnContainer = contentEl.createDiv({ cls: 'video-modal-button-container' });
         const submitBtn = btnContainer.createEl('button', { text: '一键总结', cls: 'video-modal-button' });
         const cancelBtn = btnContainer.createEl('button', { text: '取消', cls: 'video-modal-button' });
-        
+
         submitBtn.onclick = () => {
             if (this.isProcessing) return;
             const url = this.inputEl.value.trim();
@@ -696,16 +658,16 @@ class UrlInputModal extends Modal {
                     });
             }
         };
-        
+
         cancelBtn.onclick = () => this.close();
-        this.inputEl.addEventListener('keypress', e => { 
-            if (e.key === 'Enter') submitBtn.click(); 
+        this.inputEl.addEventListener('keypress', e => {
+            if (e.key === 'Enter') submitBtn.click();
         });
         this.inputEl.focus();
     }
 
-    onClose(): void { 
-        this.contentEl.empty(); 
+    onClose(): void {
+        this.contentEl.empty();
     }
 }
 
@@ -724,7 +686,7 @@ class ConfirmModal extends Modal {
         const { contentEl } = this;
         contentEl.empty();
         contentEl.createEl('p', { text: this.message });
-        
+
         const buttonContainer = contentEl.createDiv({ cls: 'confirm-modal-buttons' });
         const yesBtn = buttonContainer.createEl('button', { text: '导入字幕' });
         yesBtn.onclick = () => {

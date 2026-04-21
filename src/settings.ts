@@ -109,7 +109,6 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
         // -------------------------------------------------------------
         new Setting(containerEl).setName('API providers').setHeading();
 
-        // 渲染供应商列表
         for (const provider of this.plugin.settings.providers) {
             const isActive = provider.id === this.plugin.settings.activeProviderId;
             const setting = new Setting(containerEl)
@@ -122,7 +121,6 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                 setting.setDesc('✔️ Active provider');
             }
 
-            // 编辑按钮
             setting.addButton(btn => btn
                 .setIcon('pencil')
                 .setTooltip('Edit provider')
@@ -138,7 +136,6 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                     }).open();
                 }));
 
-            // 删除按钮（仅自定义供应商）
             if (provider.isCustom) {
                 setting.addButton(btn => btn
                     .setIcon('trash')
@@ -159,7 +156,6 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
             }
         }
 
-        // 添加新供应商按钮（放在列表末尾）
         new Setting(containerEl)
             .setName('Add new provider')
             .setDesc('Add a custom API provider')
@@ -183,7 +179,7 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                 }));
 
         // -------------------------------------------------------------
-        // 3. 摘要参数（全局）
+        // 3. 摘要参数
         // -------------------------------------------------------------
         new Setting(containerEl).setName('Summary parameters').setHeading();
 
@@ -241,7 +237,6 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                 .onChange(async (value) => {
                     this.plugin.settings.playerPosition = value as 'left' | 'right';
                     await this.plugin.saveSettings();
-                    // 销毁现有播放器视图，强制下次创建新位置
                     const leaves = this.app.workspace.getLeavesOfType(VIDEO_PLAYER_VIEW_TYPE);
                     for (const leaf of leaves) {
                         leaf.detach();
@@ -250,7 +245,7 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                 }));
 
         // -------------------------------------------------------------
-        // 5. 无字幕处理策略
+        // 5. 无字幕处理
         // -------------------------------------------------------------
         new Setting(containerEl).setName('No caption handling').setHeading();
 
@@ -274,7 +269,6 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
         // -------------------------------------------------------------
         new Setting(containerEl).setName('History').setHeading();
 
-        // 最大保留条数设置
         new Setting(containerEl)
             .setName('Max history count')
             .setDesc('Maximum number of history entries to keep (1-100).')
@@ -291,13 +285,11 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                     this.display();
                 }));
 
-        // 历史记录列表
         for (const item of this.plugin.settings.history) {
             const itemSetting = new Setting(containerEl)
                 .setName(item.title)
                 .setDesc(`${new Date(item.timestamp).toLocaleString()} - ${item.platform}`);
 
-            // Open 按钮
             itemSetting.addButton(btn => btn
                 .setButtonText('Open')
                 .onClick(() => {
@@ -309,12 +301,11 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                             const player = await this.plugin.activatePlayerView();
                             if (player) player.loadVideo(item.url);
                         } else {
-                            new Notice('视频播放器未启用，请在设置中开启');
+                            new Notice('Video player is disabled. Enable it in settings.');
                         }
                     })();
                 }));
 
-            // 单独删除按钮
             itemSetting.addButton(btn => btn
                 .setIcon('trash')
                 .setTooltip('Delete this record')
@@ -331,7 +322,6 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                 }));
         }
 
-        // 全局清空按钮（放在列表末尾）
         new Setting(containerEl)
             .setName('Clear all')
             .setDesc('Remove all history entries.')
@@ -345,23 +335,22 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                     new Notice('All history cleared');
                 }));
 
-// -------------------------------------------------------------
-// 7. 快捷键参考（使用 CSS 类，无内联样式）
-// -------------------------------------------------------------
-new Setting(containerEl).setName('Shortcuts reference').setHeading();
+        // -------------------------------------------------------------
+        // 7. 快捷键参考（已删除 "Open jotting" 提示）
+        // -------------------------------------------------------------
+        new Setting(containerEl).setName('Shortcuts reference').setHeading();
 
-const shortcutInfo = containerEl.createDiv({ cls: 'shortcut-info' });
-// eslint-disable-next-line obsidianmd/ui/sentence-case
-shortcutInfo.createEl('p', { text: 'To insert a timestamp, go to Settings → Hotkeys and search "Insert timestamp".' });
-// eslint-disable-next-line obsidianmd/ui/sentence-case
-shortcutInfo.createEl('p', { text: 'To open jotting, go to Settings → Hotkeys and search "Open jotting".' });
+        const shortcutInfo = containerEl.createDiv({ cls: 'shortcut-info' });
+        // eslint-disable-next-line obsidianmd/ui/sentence-case
+        shortcutInfo.createEl('p', { text: 'To insert a timestamp in the current video summary note, go to Settings → Hotkeys and search "Insert timestamp in video note".' });
+        // 已删除 "Open jotting" 相关行
 
-const tip = shortcutInfo.createEl('p', { text: '💡 Recommended: bind Ctrl+Shift+T and Ctrl+Shift+J.' });
-tip.addClass('shortcut-tip');
+        const tip = shortcutInfo.createEl('p', { text: '💡 Recommended: bind Ctrl+Shift+T.' });
+        tip.addClass('shortcut-tip');
     }
 }
 
-// ========== 供应商编辑模态框 ==========
+// ========== 供应商编辑模态框（无改动） ==========
 class ProviderModal extends Modal {
     private provider: ApiProvider;
     private onSubmit: (provider: ApiProvider) => Promise<void>;
@@ -377,7 +366,6 @@ class ProviderModal extends Modal {
         contentEl.empty();
         contentEl.createEl('h2', { text: `Edit provider: ${this.provider.name}` });
 
-        // 供应商名称
         new Setting(contentEl)
             .setName('Provider name')
             .addText(text => {
@@ -385,7 +373,6 @@ class ProviderModal extends Modal {
                 text.onChange(value => this.provider.name = value);
             });
 
-        // API Key（密码框）
         new Setting(contentEl)
             .setName('API key')
             .addText(text => {
@@ -394,7 +381,6 @@ class ProviderModal extends Modal {
                 text.onChange(value => this.provider.apiKey = value);
             });
 
-        // Base URL
         new Setting(contentEl)
             .setName('Base URL')
             .setDesc('API endpoint, e.g., https://api.openai.com/v1.')
@@ -403,7 +389,6 @@ class ProviderModal extends Modal {
                 text.onChange(value => this.provider.baseUrl = value);
             });
 
-        // 模型名称
         new Setting(contentEl)
             .setName('Model')
             .addText(text => {
@@ -411,7 +396,6 @@ class ProviderModal extends Modal {
                 text.onChange(value => this.provider.model = value);
             });
 
-        // 测试连接按钮
         new Setting(contentEl)
             .setName('Test connection')
             .setDesc('Verify that the API key and endpoint are working.')
@@ -439,7 +423,6 @@ class ProviderModal extends Modal {
                     })();
                 }));
 
-        // 保存/取消按钮
         const buttonContainer = contentEl.createDiv({ cls: 'provider-modal-buttons' });
         const saveBtn = buttonContainer.createEl('button', { text: 'Save' });
         saveBtn.onclick = async () => {
