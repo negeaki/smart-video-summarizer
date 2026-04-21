@@ -9,17 +9,18 @@ An Obsidian plugin that automatically fetches subtitles from YouTube and Bilibil
 - **Multi‑AI providers**: Built‑in Gemini and DeepSeek; add any OpenAI‑compatible provider (e.g., Groq, Ollama).
 - **Embedded player**: Plays videos in the Obsidian sidebar without auto‑play to avoid distraction.
 - **Timestamp insertion**: Use a custom shortcut to insert the current time under the "Timestamp" section of your note.
-- **Jotting section**: Quickly jump to the "Jotting" section to write long‑form notes or to‑do items.
-- **Screenshot guidance**: A button in the player guides you to use the system screenshot tool and automatically opens the note for pasting.
+- **Screenshot **: A button in the player guides you to use the system screenshot tool and automatically opens the note for pasting.
 - **History**: Automatically saves the last 20 summaries, with per‑entry deletion and a clear‑all button.
 - **No‑caption handling**: Choose to use metadata, import a local subtitle file (.srt/.vtt/.txt/.ass), or skip the video.
 - **Fully local**: All API calls go directly from your machine to the provider; no intermediate server.
 
 ## Installation
 
-1. Download the latest release from [GitHub Releases](https://github.com/negeaki/smart-video-summarizer/releases).
-2. Unzip and copy the folder to `<your-vault>/.obsidian/plugins/`.
-3. Restart Obsidian and enable the plugin in Settings → Community plugins.
+1. Download main.js, manifest.json, and styles.css from [GitHub Releases](https://github.com/negeaki/smart-video-summarizer/releases).
+2. Create a folder called claudian in your vault's plugins folder:
+/path/to/vault/.obsidian/plugins/claudian/
+3.  copy the folder to `<your-vault>/.obsidian/plugins/`.
+4. Restart Obsidian and enable the plugin in Settings → Community plugins.
 
 ## Configuration
 
@@ -34,9 +35,9 @@ An Obsidian plugin that automatically fetches subtitles from YouTube and Bilibil
 | Action | How to bind |
 |--------|--------------|
 | Insert timestamp | Settings → Hotkeys → search "Insert timestamp" |
-| Open jotting | Settings → Hotkeys → search "Open jotting" |
+| Open video player | Settings → Hotkeys → search `Open video player` |
 
-💡 Recommended: bind `Ctrl+Shift+T` and `Ctrl+Shift+J`.
+💡 Recommended: bind `Ctrl+Shift+T` (timestamp) and `Ctrl+Shift+P` (player).
 
 ## Usage
 
