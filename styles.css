@@ -1,4 +1,4 @@
-/* 视频链接输入框 */
+/* ========== 视频链接输入模态框 ========== */
 .video-url-input {
     width: 100%;
     margin-bottom: 10px;
@@ -8,22 +8,26 @@
     background-color: var(--background-primary);
     color: var(--text-normal);
 }
+
 .video-modal-button-container {
     display: flex;
     gap: 10px;
     margin-top: 10px;
 }
+
 .video-modal-button {
     padding: 6px 12px;
     cursor: pointer;
 }
-/* 播放器视图 */
+
+/* ========== 播放器视图 ========== */
 .video-player-container {
     display: flex;
     flex-direction: column;
     height: 100%;
     padding: 10px;
 }
+
 .player-wrapper {
     flex: 1;
     min-height: 200px;
@@ -31,14 +35,18 @@
     border-radius: 8px;
     overflow: hidden;
 }
+
 .player-wrapper-loaded {
-    height: 300px;
+    height: 300px;  /* 视频容器高度，可通过 CSS 变量调整 */
 }
+
 .player-wrapper iframe {
     width: 100%;
     height: 100%;
     border: none;
 }
+
+/* 播放器控制栏：右对齐按钮 */
 .player-controls {
     display: flex;
     gap: 8px;
@@ -46,9 +54,11 @@
     border-top: 1px solid var(--background-modifier-border);
     align-items: center;
 }
+
 .player-controls-spacer {
-    flex: 1;
+    flex: 1;  /* 占据剩余空间，将按钮推到右侧 */
 }
+
 .player-btn {
     background: none;
     border: none;
@@ -57,17 +67,28 @@
     padding: 4px 8px;
     border-radius: 4px;
 }
+
 .player-btn:hover {
     background-color: var(--background-modifier-hover);
 }
-/* 供应商激活高亮 */
+
+/* ========== 供应商设置界面 ========== */
 .mod-active-provider {
     background-color: var(--background-modifier-hover);
     border-left: 3px solid var(--interactive-accent);
     padding-left: 10px;
 }
+
 .provider-modal-buttons {
     display: flex;
     gap: 10px;
+    margin-top: 20px;
+}
+
+/* ========== 确认模态框 ========== */
+.confirm-modal-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
     margin-top: 20px;
 }

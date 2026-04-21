@@ -3,6 +3,7 @@ import type SmartVideoSummarizerPlugin from './main';
 import { getApiAdapter } from './api';
 import { VIDEO_PLAYER_VIEW_TYPE } from './playerView';
 
+// ========== 类型定义 ==========
 export interface ApiProvider {
     id: string;
     name: string;
@@ -29,9 +30,11 @@ export interface SmartVideoSummarizerSettings {
     playerPosition: 'left' | 'right';
     noCaptionStrategy: string;
     defaultFolder: string;
+    maxHistoryCount: number;
     history: HistoryItem[];
 }
 
+// ========== 默认配置 ==========
 const DEFAULT_PROVIDERS: ApiProvider[] = [
     {
         id: 'gemini-default',
@@ -60,6 +63,7 @@ export const DEFAULT_SETTINGS: SmartVideoSummarizerSettings = {
     playerPosition: 'right',
     noCaptionStrategy: 'metadata',
     defaultFolder: 'Video Summaries',
+    maxHistoryCount: 20,
     history: [],
 };
 
@@ -67,6 +71,7 @@ function generateId(): string {
     return Date.now() + '-' + Math.random().toString(36).substring(2, 8);
 }
 
+// ========== 设置选项卡 ==========
 export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
     plugin: SmartVideoSummarizerPlugin;
 
@@ -79,7 +84,9 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        // 激活供应商下拉
+        // -------------------------------------------------------------
+        // 1. AI 提供商选择
+        // -------------------------------------------------------------
         new Setting(containerEl)
             .setName('Active AI provider')
             .setDesc('Select which API provider to use for generating summaries.')
@@ -97,30 +104,10 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                 });
             });
 
+        // -------------------------------------------------------------
+        // 2. API 供应商管理
+        // -------------------------------------------------------------
         new Setting(containerEl).setName('API providers').setHeading();
-
-        // 添加新供应商
-        new Setting(containerEl)
-            .setName('Add new provider')
-            .setDesc('Add a custom API provider ')
-            .addButton(btn => btn
-                .setButtonText('Add provider')
-                .onClick(() => {
-                    void (async () => {
-                        const newProvider: ApiProvider = {
-                            id: generateId(),
-                            name: 'New provider',
-                            apiKey: '',
-                            baseUrl: 'https://api.openai.com/v1',
-                            model: 'gpt-3.5-turbo',
-                            isCustom: true,
-                        };
-                        this.plugin.settings.providers.push(newProvider);
-                        this.plugin.settings.activeProviderId = newProvider.id;
-                        await this.plugin.saveSettings();
-                        this.display();
-                    })();
-                }));
 
         // 渲染供应商列表
         for (const provider of this.plugin.settings.providers) {
@@ -128,6 +115,7 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
             const setting = new Setting(containerEl)
                 .setName(provider.name)
                 .setDesc(provider.isCustom ? 'Custom provider' : 'Built-in provider');
+
             if (isActive) {
                 setting.settingEl.addClass('mod-active-provider');
                 // eslint-disable-next-line obsidianmd/ui/sentence-case
@@ -150,7 +138,7 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                     }).open();
                 }));
 
-            // 删除按钮（仅自定义）
+            // 删除按钮（仅自定义供应商）
             if (provider.isCustom) {
                 setting.addButton(btn => btn
                     .setIcon('trash')
@@ -171,8 +159,34 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
             }
         }
 
-        // 全局参数
+        // 添加新供应商按钮（放在列表末尾）
+        new Setting(containerEl)
+            .setName('Add new provider')
+            .setDesc('Add a custom API provider')
+            .addButton(btn => btn
+                .setButtonText('Add provider')
+                .onClick(() => {
+                    void (async () => {
+                        const newProvider: ApiProvider = {
+                            id: generateId(),
+                            name: 'New provider',
+                            apiKey: '',
+                            baseUrl: 'https://api.openai.com/v1',
+                            model: 'gpt-3.5-turbo',
+                            isCustom: true,
+                        };
+                        this.plugin.settings.providers.push(newProvider);
+                        this.plugin.settings.activeProviderId = newProvider.id;
+                        await this.plugin.saveSettings();
+                        this.display();
+                    })();
+                }));
+
+        // -------------------------------------------------------------
+        // 3. 摘要参数（全局）
+        // -------------------------------------------------------------
         new Setting(containerEl).setName('Summary parameters').setHeading();
+
         new Setting(containerEl)
             .setName('Temperature')
             .setDesc('Controls randomness (0 = deterministic, 1 = creative).')
@@ -202,7 +216,9 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                     })();
                 }));
 
-        // 播放器设置
+        // -------------------------------------------------------------
+        // 4. 播放器设置
+        // -------------------------------------------------------------
         new Setting(containerEl).setName('Video player').setHeading();
 
         new Setting(containerEl)
@@ -233,14 +249,17 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                     this.display();
                 }));
 
-        // 无字幕策略
+        // -------------------------------------------------------------
+        // 5. 无字幕处理策略
+        // -------------------------------------------------------------
         new Setting(containerEl).setName('No caption handling').setHeading();
+
         new Setting(containerEl)
             .setName('No caption strategy')
             .setDesc('What to do when a video has no captions.')
             .addDropdown(dropdown => dropdown
                 .addOption('metadata', 'Use only metadata.')
-                .addOption('multimodal', 'Use multimodal AI.')
+                .addOption('local', 'Import local subtitle file.')
                 .addOption('skip', 'Skip this video.')
                 .setValue(this.plugin.settings.noCaptionStrategy)
                 .onChange((value) => {
@@ -250,12 +269,35 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                     })();
                 }));
 
-        // 历史记录
+        // -------------------------------------------------------------
+        // 6. 历史记录
+        // -------------------------------------------------------------
         new Setting(containerEl).setName('History').setHeading();
+
+        // 最大保留条数设置
+        new Setting(containerEl)
+            .setName('Max history count')
+            .setDesc('Maximum number of history entries to keep (1-100).')
+            .addSlider(slider => slider
+                .setLimits(1, 100, 1)
+                .setValue(this.plugin.settings.maxHistoryCount)
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    this.plugin.settings.maxHistoryCount = value;
+                    if (this.plugin.settings.history.length > value) {
+                        this.plugin.settings.history = this.plugin.settings.history.slice(0, value);
+                    }
+                    await this.plugin.saveSettings();
+                    this.display();
+                }));
+
+        // 历史记录列表
         for (const item of this.plugin.settings.history) {
             const itemSetting = new Setting(containerEl)
                 .setName(item.title)
                 .setDesc(`${new Date(item.timestamp).toLocaleString()} - ${item.platform}`);
+
+            // Open 按钮
             itemSetting.addButton(btn => btn
                 .setButtonText('Open')
                 .onClick(() => {
@@ -271,22 +313,55 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                         }
                     })();
                 }));
+
+            // 单独删除按钮
+            itemSetting.addButton(btn => btn
+                .setIcon('trash')
+                .setTooltip('Delete this record')
+                .onClick(() => {
+                    void (async () => {
+                        const idx = this.plugin.settings.history.findIndex(h => h.url === item.url && h.timestamp === item.timestamp);
+                        if (idx !== -1) {
+                            this.plugin.settings.history.splice(idx, 1);
+                            await this.plugin.saveSettings();
+                            this.display();
+                            new Notice('History record deleted');
+                        }
+                    })();
+                }));
         }
-        // 清空历史按钮
+
+        // 全局清空按钮（放在列表末尾）
         new Setting(containerEl)
-            .setName('Clear history')
+            .setName('Clear all')
             .setDesc('Remove all history entries.')
             .addButton(btn => btn
-                .setButtonText('Clear')
+                .setButtonText('Clear all')
+                .setWarning()
                 .onClick(async () => {
-                    await this.plugin.clearHistory();
+                    this.plugin.settings.history = [];
+                    await this.plugin.saveSettings();
                     this.display();
-                    new Notice('History cleared');
+                    new Notice('All history cleared');
                 }));
+
+// -------------------------------------------------------------
+// 7. 快捷键参考（使用 CSS 类，无内联样式）
+// -------------------------------------------------------------
+new Setting(containerEl).setName('Shortcuts reference').setHeading();
+
+const shortcutInfo = containerEl.createDiv({ cls: 'shortcut-info' });
+// eslint-disable-next-line obsidianmd/ui/sentence-case
+shortcutInfo.createEl('p', { text: 'To insert a timestamp, go to Settings → Hotkeys and search "Insert timestamp".' });
+// eslint-disable-next-line obsidianmd/ui/sentence-case
+shortcutInfo.createEl('p', { text: 'To open jotting, go to Settings → Hotkeys and search "Open jotting".' });
+
+const tip = shortcutInfo.createEl('p', { text: '💡 Recommended: bind Ctrl+Shift+T and Ctrl+Shift+J.' });
+tip.addClass('shortcut-tip');
     }
 }
 
-// 供应商编辑模态框
+// ========== 供应商编辑模态框 ==========
 class ProviderModal extends Modal {
     private provider: ApiProvider;
     private onSubmit: (provider: ApiProvider) => Promise<void>;
@@ -297,11 +372,12 @@ class ProviderModal extends Modal {
         this.onSubmit = onSubmit;
     }
 
-    onOpen() {
+    onOpen(): void {
         const { contentEl } = this;
         contentEl.empty();
         contentEl.createEl('h2', { text: `Edit provider: ${this.provider.name}` });
 
+        // 供应商名称
         new Setting(contentEl)
             .setName('Provider name')
             .addText(text => {
@@ -309,6 +385,7 @@ class ProviderModal extends Modal {
                 text.onChange(value => this.provider.name = value);
             });
 
+        // API Key（密码框）
         new Setting(contentEl)
             .setName('API key')
             .addText(text => {
@@ -317,6 +394,7 @@ class ProviderModal extends Modal {
                 text.onChange(value => this.provider.apiKey = value);
             });
 
+        // Base URL
         new Setting(contentEl)
             .setName('Base URL')
             .setDesc('API endpoint, e.g., https://api.openai.com/v1.')
@@ -325,6 +403,7 @@ class ProviderModal extends Modal {
                 text.onChange(value => this.provider.baseUrl = value);
             });
 
+        // 模型名称
         new Setting(contentEl)
             .setName('Model')
             .addText(text => {
@@ -332,6 +411,7 @@ class ProviderModal extends Modal {
                 text.onChange(value => this.provider.model = value);
             });
 
+        // 测试连接按钮
         new Setting(contentEl)
             .setName('Test connection')
             .setDesc('Verify that the API key and endpoint are working.')
@@ -359,6 +439,7 @@ class ProviderModal extends Modal {
                     })();
                 }));
 
+        // 保存/取消按钮
         const buttonContainer = contentEl.createDiv({ cls: 'provider-modal-buttons' });
         const saveBtn = buttonContainer.createEl('button', { text: 'Save' });
         saveBtn.onclick = async () => {
@@ -374,7 +455,7 @@ class ProviderModal extends Modal {
         cancelBtn.onclick = () => this.close();
     }
 
-    onClose() {
+    onClose(): void {
         this.contentEl.empty();
     }
 }
