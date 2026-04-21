@@ -32,6 +32,7 @@ export interface SmartVideoSummarizerSettings {
     defaultFolder: string;
     maxHistoryCount: number;
     history: HistoryItem[];
+    autoSummarizeOnPaste: boolean;
 }
 
 // ========== 默认配置 ==========
@@ -63,6 +64,7 @@ export const DEFAULT_SETTINGS: SmartVideoSummarizerSettings = {
     playerPosition: 'right',
     noCaptionStrategy: 'metadata',
     defaultFolder: 'Video Summaries',
+    autoSummarizeOnPaste: false,
     maxHistoryCount: 20,
     history: [],
 };

@@ -1,87 +1,87 @@
-# Smart Video Summarizer for Obsidian
+# Obsidian Smart Video Summarizer
 
-An Obsidian plugin that automatically fetches subtitles from YouTube and Bilibili, calls an AI to generate a structured summary, and features an embedded player, timestamp insertion, and a jotting section.
+An Obsidian plugin that automatically fetches subtitles from YouTube and Bilibili videos and uses AI to generate structured summary notes, with an embedded video player and clickable timestamps.
 
-## 📦 Installation
+## Features
 
-1. Download `main.js`, `manifest.json`, `styles.css` from the [Releases](https://github.com/yourusername/smart-video-summarizer/releases) page
-2. Create a folder `smart-video-summarizer` inside `.obsidian/plugins/` in your vault
-3. Copy the three files into that folder
-4. Restart Obsidian and enable the plugin in Settings → Community plugins.
+- Support for YouTube and Bilibili video links.
+- Automatically retrieve official subtitles; if none exist, you can import local `.srt`, `.vtt`, `.ass`, or `.txt` files.
+- Integrate multiple AI providers (Gemini, Grok, DeepSeek, or any OpenAI-compatible endpoint).
+- Generate structured notes containing key points, a detailed summary, main conclusions, technical term explanations, and tags.
+- Long transcripts are automatically split into chunks to bypass context length limits.
+- Embedded video player with picture-in-picture and progress memory.
+- Clickable timestamps inside notes that jump to the corresponding video time.
+- Optional auto‑summarization when pasting a video link (configurable).
+- Dataview‑compatible frontmatter (`tags`, `aliases`, `video_url`, etc.).
 
-## ⚙️ Configuration
+## Installation
 
-Open the plugin settings tab to configure:
+### Manual Installation
+1. Download the latest `main.js`, `manifest.json`, and `styles.css` from the Releases page.
+2. Place the three files inside your Obsidian vault at `.obsidian/plugins/smart-video-summarizer/`.
+3. Restart Obsidian and enable the plugin in Settings.
 
-### 1. AI Provider
-- Choose the active provider (Gemini / DeepSeek / custom)
-- Add custom providers (API Key, Base URL, Model)
-- Test connection button
+### Via BRAT
+1. Install and enable the BRAT plugin.
+2. Add this repository’s GitHub URL in BRAT settings.
+3. Enable the plugin from the Community Plugins list.
 
-### 2. Summary Parameters
-- **Temperature** – randomness (0 = deterministic, 1 = creative)
-- **Max tokens** – maximum length of the generated summary
+## Usage
 
-### 3. Video Player
-- **Enable mini player** – automatically open the sidebar player when generating a summary
-- **Player position** – show player in left or right sidebar
+### Generate a Video Summary
+- Click the video icon in the left sidebar, or run the command `Open video summarizer`.
+- Paste a YouTube or Bilibili link into the pop‑up input box.
+- Click `Summarize` and wait for the AI to generate the note.
+- The note is automatically saved in your configured folder, including video metadata and an appendix with the transcript.
 
-### 4. No Caption Strategy
-- **Use only metadata** – generate summary from video title/author only
-- **Import local subtitle file** – prompt to upload `.srt`, `.vtt`, `.ass`, or `.txt`
-- **Skip this video** – do nothing when no subtitles are found
+### Quick Actions
+- Select a video link and run the command `Summarize from selected URL`.
+- Paste a video link in the editor (requires the `Auto summarize on paste` setting).
+- Inside a video summary note, run the command `Insert timestamp` to add a clickable timestamp.
 
-### 5. History
-- Max number of history entries (1–100)
-- List of all summarized videos; open notes or replay videos
-- Delete individual entries or clear all history
+### Timestamp Jump
+- Timestamps inserted in the format `[⏰ HH:MM:SS]` become clickable links that jump the embedded player to that exact moment.
 
-## 🚀 Usage
+### Video Player
+- Run the command `Open video player`, or enable `Enable mini player` to have the player open automatically after generating a summary.
+- The player supports progress memory and picture‑in‑picture mode.
 
-### Quick start
-1. **Get an API key** – for Gemini, visit [Google AI Studio](https://aistudio.google.com/) (free tier available)
-2. **Configure the plugin** – paste your API key and select the provider
-3. **Summarize a video**:
-   - Click the video icon in the left ribbon, or
-   - Run the command “Open video summarizer”, or
-   - Paste a YouTube/Bilibili link directly into an editor – the plugin will automatically start
+## Plugin Settings
 
-### Commands (assign hotkeys in Obsidian settings)
-| Command name | Command ID | Description |
-|--------------|------------|-------------|
-| Open video summarizer | `open-video-summarizer` | Shows the URL input modal |
-| Summarize from selected URL | `summarize-from-selected-url` | Summarizes the video link currently selected in the editor |
-| Insert timestamp in current video note | `insert-timestamp-in-video-note` | Inserts `[⏰ HH:MM:SS]` under the “### 时间戳” heading (only works in a video summary note) |
-| Open video player | `open-video-player` | Shows/focuses the sidebar video player |
+- **Default folder** – Where summary notes are saved.
+- **AI provider configuration** – Add multiple API keys; supports custom endpoints.
+- **No‑caption strategy** – Skip, import a local subtitle file, or fall back to metadata‑only summary.
+- **Auto summarize on paste** – Automatically trigger generation when a video link is pasted.
+- **Player position** – Show the player in the left or right sidebar.
 
-**Recommended hotkeys**:
-- `Ctrl+Shift+T` – Insert timestamp
-- `Ctrl+Shift+V` – Open video summarizer (or use the ribbon icon)
+## Dependencies
 
-### Video player
-- Automatically opens if “Enable mini player” is on
-- Embedded YouTube/Bilibili player in the sidebar
-- Screenshot button shows a system tooltip and opens the corresponding summary note
+- Access to `youtube.com` is required for YouTube subtitle fetching.
+- Access to `api.bilibili.com` is required for Bilibili video information.
+- An API key for one of the supported AI providers is needed for summarization.
 
-### Timestamps & jotting
-- Every generated note contains `### 时间戳` and `### 随手记` sections
-- The timestamp command inserts the current time under the timestamp heading
-- The jotting area is free‑form – you can write notes manually
+## FAQ
 
-## 🛠️ Technical details
+### "Video has no subtitles" – what can I do?
+Change the `No‑caption strategy` to `Import local subtitle file` and upload your own subtitle file.
 
-- **Subtitle fetching** – YouTube uses `youtube-transcript`; Bilibili uses the official API
-- **AI adapters** – Gemini uses the dedicated endpoint; all others use OpenAI Chat Completions format
-- **Note storage** – default folder is `Video Summaries`; file name is `{title}_摘要.md`
-- **Frontmatter** – includes `title`, `author`, `platform`, `video_url`, `created` – used to identify video notes
+### AI returns an error when generating the note?
+Check that your API key is correct, your internet connection is working, and the selected model supports long‑form text.
 
-## 🤝 Contributing
+### The player cannot load the video?
+Some embedded videos may be restricted by the website. Right‑click the player and open the video in a new tab.
 
-Issues and pull requests are welcome. Please follow Obsidian plugin conventions: no `any`, no unused variables, no inline styles, use sentence case for English UI strings.
+## License
 
-## 📄 License
+MIT License
 
-[MIT](LICENSE)
+## Author
+
+[202604]
+
+## 🙏Feedback & Contributions
+
+Please open an issue on GitHub for bug reports or feature requests. Pull requests are welcome.
 
 ## 🙏 Acknowledgements
 
