@@ -1,5 +1,4 @@
 // src/playerView.ts
-// src/playerView.ts
 import { ItemView, WorkspaceLeaf, Notice } from 'obsidian';
 import type SmartVideoSummarizerPlugin from './main';
 import {

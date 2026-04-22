@@ -14,7 +14,7 @@ export const JOTTING_HEADING = '### 随手记';
 export const TIMESTAMP_PREFIX = '📌';
 export const TIMESTAMP_MARKDOWN_TEMPLATE = `[${TIMESTAMP_PREFIX} {time}] `;
 
-// ========== 默认文件夹 ==========
+// ========== 默认文件夹（固定） ==========
 export const DEFAULT_FOLDER_NAME = 'Video Summaries';
 
 // ========== 字幕截断长度 ==========
@@ -43,11 +43,9 @@ export const NOTICE_MESSAGES = {
     PLAYER_NOT_READY: '播放器未就绪',
     SEEK_SUCCESS_YOUTUBE: (time: string) => `已跳转到 ${time}`,
     SEEK_SUCCESS_BILIBILI: (time: string) => `已跳转到 ${time}（B站需重新加载）`,
-    PLAYER_DISABLED: 'Video player is disabled. Enable it in settings.',
     HISTORY_DELETED: 'History record deleted',
     HISTORY_CLEARED: 'All history cleared',
     SELECT_VALID_URL: '请先选中一个有效的视频链接',
-    CURSOR_POSITIONED: '光标已定位到随手记区域',
 } as const;
 
 // ========== UI 模态框文本 ==========

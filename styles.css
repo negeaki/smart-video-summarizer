@@ -1,94 +1,199 @@
-/* ========== 视频链接输入模态框 ========== */
-.video-url-input {
-    width: 100%;
-    margin-bottom: 10px;
-    padding: 8px;
-    border-radius: 4px;
-    border: 1px solid var(--background-modifier-border);
-    background-color: var(--background-primary);
-    color: var(--text-normal);
-}
+/* src/styles.css */
 
-.video-modal-button-container {
-    display: flex;
-    gap: 10px;
-    margin-top: 10px;
-}
-
-.video-modal-button {
-    padding: 6px 12px;
-    cursor: pointer;
-}
-
-/* ========== 播放器视图 ========== */
+/* ========== 播放器视图样式 ========== */
 .video-player-container {
     display: flex;
     flex-direction: column;
     height: 100%;
-    padding: 10px;
+    padding: 8px;
+}
+
+.player-controls {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.player-controls-spacer {
+    flex: 1;
+}
+
+.player-btn {
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.2s;
+}
+
+.player-btn:hover {
+    background: var(--background-modifier-hover);
 }
 
 .player-wrapper {
+    position: relative;
+    width: 100%;
     flex: 1;
-    min-height: 200px;
-    background-color: #000;
+    background: #000;
     border-radius: 8px;
     overflow: hidden;
 }
 
-.player-wrapper-loaded {
-    height: 300px;  /* 视频容器高度，可通过 CSS 变量调整 */
-}
-
 .player-wrapper iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     border: none;
 }
 
-/* 播放器控制栏：右对齐按钮 */
-.player-controls {
-    display: flex;
-    gap: 8px;
-    padding: 8px;
-    border-top: 1px solid var(--background-modifier-border);
-    align-items: center;
-}
-
-.player-controls-spacer {
-    flex: 1;  /* 占据剩余空间，将按钮推到右侧 */
-}
-
-.player-btn {
-    background: none;
-    border: none;
-    font-size: 1.2em;
+/* ========== 时间戳链接样式 ========== */
+.timestamp-link {
     cursor: pointer;
-    padding: 4px 8px;
+    text-decoration: underline;
+    color: var(--text-accent);
+    transition: opacity 0.2s;
+}
+
+.timestamp-link:hover {
+    opacity: 0.8;
+}
+
+/* ========== 设置页面自定义样式 ========== */
+/* 自定义标题行（History 分组） */
+.settings-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 1.2em;
+    font-weight: 600;
+}
+
+.settings-heading-border {
+    border-bottom: 1px solid var(--background-modifier-border);
+    margin-bottom: 16px;
+}
+
+/* 历史记录列表容器 */
+.history-list-container {
+    max-height: 180px;
+    overflow-y: auto;
+    margin: 8px 0;
+    border: 1px solid var(--background-modifier-border);
     border-radius: 4px;
 }
 
-.player-btn:hover {
-    background-color: var(--background-modifier-hover);
-}
-
-/* ========== 供应商设置界面 ========== */
-.mod-active-provider {
-    background-color: var(--background-modifier-hover);
-    border-left: 3px solid var(--interactive-accent);
-    padding-left: 10px;
-}
-
-.provider-modal-buttons {
+/* 单个历史记录项 */
+.history-item {
     display: flex;
-    gap: 10px;
-    margin-top: 20px;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+.history-item:last-child {
+    border-bottom: none;
 }
 
-/* ========== 确认模态框 ========== */
+/* 历史记录信息文本 */
+.history-info {
+    flex: 1;
+    font-size: 0.9em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 按钮组 */
+.history-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+/* 历史记录按钮 */
+.history-btn {
+    padding: 2px 8px;
+    font-size: 0.8em;
+    cursor: pointer;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+}
+.history-btn:hover {
+    background: var(--background-modifier-hover);
+}
+
+/* 空状态提示 */
+.history-empty {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+/* 历史记录高亮（用于搜索定位） */
+.history-item-highlight {
+    background-color: var(--text-highlight-bg);
+    transition: background-color 0.3s ease;
+}
+
+/* 搜索模态框输入框 */
+.history-search-modal-input {
+    width: 100%;
+    margin: 12px 0;
+    padding: 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+}
+
+/* 确认模态框按钮布局 */
 .confirm-modal-buttons {
     display: flex;
-    gap: 10px;
     justify-content: flex-end;
-    margin-top: 20px;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+/* 提供商管理模态框按钮布局 */
+.provider-modal-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+/* URL 输入模态框样式 */
+.video-url-input {
+    width: 100%;
+    margin: 8px 0;
+}
+
+.video-modal-button-container {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.video-modal-button {
+    padding: 4px 12px;
+}
+
+/* 可点击图标按钮（标题行右侧搜索图标，如需要） */
+.clickable-icon {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+}
+.clickable-icon:hover {
+    background: var(--background-modifier-hover);
 }

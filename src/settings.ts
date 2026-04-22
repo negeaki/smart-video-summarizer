@@ -30,10 +30,8 @@ export interface SmartVideoSummarizerSettings {
     enableMiniPlayer: boolean;
     playerPosition: 'left' | 'right';
     noCaptionStrategy: string;
-    defaultFolder: string;
     maxHistoryCount: number;
     history: HistoryItem[];
-    autoSummarizeOnPaste: boolean;
 }
 
 // ========== 默认配置 ==========
@@ -64,17 +62,15 @@ export const DEFAULT_SETTINGS: SmartVideoSummarizerSettings = {
     enableMiniPlayer: true,
     playerPosition: 'right',
     noCaptionStrategy: 'metadata',
-    defaultFolder: 'Video Summaries',
     maxHistoryCount: 20,
     history: [],
-    autoSummarizeOnPaste: false,
 };
 
 function generateId(): string {
     return Date.now() + '-' + Math.random().toString(36).substring(2, 8);
 }
 
-// ========== 设置选项卡（精简版） ==========
+// ========== 设置选项卡 ==========
 export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
     plugin: SmartVideoSummarizerPlugin;
 
@@ -88,11 +84,10 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
         containerEl.empty();
 
         // -------------------------------------------------------------
-        // 1. AI 配置
+        // 分组 1: AI Provider
         // -------------------------------------------------------------
-        new Setting(containerEl).setName('AI provider').setHeading();
+        new Setting(containerEl).setName('API provider').setHeading();
 
-        // 活跃提供商选择 + 管理按钮
         new Setting(containerEl)
             .setName('Active provider')
             .addDropdown(dropdown => {
@@ -111,13 +106,13 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                     new ProviderManagerModal(this.app, this.plugin).open();
                 }));
 
-        // 摘要参数（Temperature + Max tokens）
         new Setting(containerEl)
             .setName('Temperature')
             .setDesc('Randomness (0 = deterministic, 1 = creative)')
             .addSlider(slider => slider
-                .setLimits(0, 1, 0.1)
+                .setLimits(0, 1, 0.01)
                 .setValue(this.plugin.settings.temperature)
+                .setDynamicTooltip()
                 .onChange(async (value) => {
                     this.plugin.settings.temperature = value;
                     await this.plugin.saveSettings();
@@ -125,24 +120,23 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Max tokens')
-            .setDesc('Summary length limit')
-            .addText(text => text
-                .setValue(String(this.plugin.settings.maxTokens))
+            .setDesc('Maximum length of the summary')
+            .addSlider(slider => slider
+                .setLimits(100, 8192, 100)
+                .setValue(this.plugin.settings.maxTokens)
+                .setDynamicTooltip()
                 .onChange(async (value) => {
-                    const num = parseInt(value);
-                    if (!isNaN(num)) {
-                        this.plugin.settings.maxTokens = num;
-                        await this.plugin.saveSettings();
-                    }
+                    this.plugin.settings.maxTokens = value;
+                    await this.plugin.saveSettings();
                 }));
 
         // -------------------------------------------------------------
-        // 2. 播放器
+        // 分组 2: Player
         // -------------------------------------------------------------
         new Setting(containerEl).setName('Player').setHeading();
 
         new Setting(containerEl)
-            .setName('Auto open')
+            .setName('Auto open player')
             .setDesc('Open player when generating summary')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.enableMiniPlayer)
@@ -151,26 +145,19 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
+        // Player position 改为单个开关（Right sidebar）
         new Setting(containerEl)
-            .setName('Position')
-            .setDesc('Left or right sidebar')
-            .addDropdown(dropdown => dropdown
-                .addOption('left', 'Left')
-                .addOption('right', 'Right')
-                .setValue(this.plugin.settings.playerPosition)
+            .setName('Right sidebar')
+            .setDesc('Enable to show player in right sidebar; disable for left sidebar')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.playerPosition === 'right')
                 .onChange(async (value) => {
-                    this.plugin.settings.playerPosition = value as 'left' | 'right';
+                    this.plugin.settings.playerPosition = value ? 'right' : 'left';
                     await this.plugin.saveSettings();
-                    // 销毁现有播放器视图，强制下次创建新位置
                     const leaves = this.app.workspace.getLeavesOfType(VIDEO_PLAYER_VIEW_TYPE);
                     for (const leaf of leaves) leaf.detach();
                     this.display();
                 }));
-
-        // -------------------------------------------------------------
-        // 3. 字幕处理
-        // -------------------------------------------------------------
-        new Setting(containerEl).setName('Subtitle').setHeading();
 
         new Setting(containerEl)
             .setName('No caption strategy')
@@ -184,40 +171,65 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        new Setting(containerEl)
-            .setName('Default folder')
-            .addText(text => text
-                .setValue(this.plugin.settings.defaultFolder)
-                .onChange(async (value) => {
-                    this.plugin.settings.defaultFolder = value;
-                    await this.plugin.saveSettings();
-                }));
-
         // -------------------------------------------------------------
-        // 4. 自动化
-        // -------------------------------------------------------------
-        new Setting(containerEl).setName('Automation').setHeading();
-
-        new Setting(containerEl)
-            .setName('Auto summarize on paste')
-            .setDesc('Generate summary when pasting a video link')
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.autoSummarizeOnPaste)
-                .onChange(async (value) => {
-                    this.plugin.settings.autoSummarizeOnPaste = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        // -------------------------------------------------------------
-        // 5. 历史记录
+        // 分组 3: History
         // -------------------------------------------------------------
         new Setting(containerEl).setName('History').setHeading();
 
+        // 历史记录列表容器
+        const historyContainer = containerEl.createDiv({ cls: 'history-list-container' });
+
+        interface HistoryItemEntry {
+            element: HTMLElement;
+            title: string;
+            platform: string;
+        }
+        const historyItems: HistoryItemEntry[] = [];
+
+        const renderHistoryList = () => {
+            historyContainer.empty();
+            historyItems.length = 0;
+            const history = this.plugin.settings.history;
+            for (const item of history) {
+                const itemDiv = historyContainer.createDiv({ cls: 'history-item' });
+                const infoSpan = itemDiv.createSpan({ cls: 'history-info' });
+                infoSpan.setText(`${item.title}  (${new Date(item.timestamp).toLocaleString()} - ${item.platform})`);
+                const btnGroup = itemDiv.createSpan({ cls: 'history-buttons' });
+                const openBtn = btnGroup.createEl('button', { text: 'Open', cls: 'history-btn' });
+                openBtn.onclick = async () => {
+                    if (item.summaryPath) {
+                        await this.app.workspace.openLinkText(item.summaryPath, '');
+                    }
+                    if (this.plugin.settings.enableMiniPlayer) {
+                        const player = await this.plugin.activatePlayerView();
+                        if (player) player.loadVideo(item.url);
+                    }
+                };
+                const deleteBtn = btnGroup.createEl('button', { text: '🗑', cls: 'history-btn' });
+                deleteBtn.setAttribute('aria-label', 'Delete');
+                deleteBtn.onclick = async () => {
+                    const idx = this.plugin.settings.history.findIndex(h => h.url === item.url && h.timestamp === item.timestamp);
+                    if (idx !== -1) {
+                        this.plugin.settings.history.splice(idx, 1);
+                        await this.plugin.saveSettings();
+                        renderHistoryList();
+                    }
+                };
+                historyItems.push({ element: itemDiv, title: item.title, platform: item.platform });
+            }
+            if (history.length === 0) {
+                historyContainer.createDiv({ text: 'No history records', cls: 'history-empty' });
+            }
+        };
+        renderHistoryList();
+
+        // Max entries 滑块
         new Setting(containerEl)
             .setName('Max entries')
             .addSlider(slider => slider
                 .setLimits(1, 100, 1)
                 .setValue(this.plugin.settings.maxHistoryCount)
+                .setDynamicTooltip()
                 .onChange(async (value) => {
                     this.plugin.settings.maxHistoryCount = value;
                     if (this.plugin.settings.history.length > value) {
@@ -227,47 +239,31 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                     this.display();
                 }));
 
-        for (const item of this.plugin.settings.history) {
-            const itemSetting = new Setting(containerEl)
-                .setName(item.title)
-                .setDesc(`${new Date(item.timestamp).toLocaleString()} - ${item.platform}`);
-
-            itemSetting.addButton(btn => btn
-                .setButtonText('Open')
-                .onClick(async () => {
-                    if (item.summaryPath) {
-                        await this.app.workspace.openLinkText(item.summaryPath, '');
+        // 底部操作行：Search 和 Clear all
+        const actionRow = new Setting(containerEl);
+        actionRow.setName('Actions');
+        actionRow.addButton(btn => {
+            btn.setButtonText('Search');
+            btn.onClick(() => {
+                new HistorySearchModal(this.app, historyItems, historyContainer).open();
+            });
+        });
+        actionRow.addButton(btn => {
+            btn.setButtonText('Clear all');
+            btn.setWarning();
+            btn.onClick(() => {
+                const confirmModal = new ConfirmModal(this.app, 'Are you sure you want to clear all history?', (confirmed) => {
+                    if (confirmed) {
+                        this.plugin.settings.history = [];
+                        void this.plugin.saveSettings().then(() => {
+                            this.display();
+                            new Notice('All history cleared');
+                        });
                     }
-                    if (this.plugin.settings.enableMiniPlayer) {
-                        const player = await this.plugin.activatePlayerView();
-                        if (player) player.loadVideo(item.url);
-                    }
-                }));
-
-            itemSetting.addButton(btn => btn
-                .setIcon('trash')
-                .setTooltip('Delete')
-                .onClick(async () => {
-                    const idx = this.plugin.settings.history.findIndex(h => h.url === item.url && h.timestamp === item.timestamp);
-                    if (idx !== -1) {
-                        this.plugin.settings.history.splice(idx, 1);
-                        await this.plugin.saveSettings();
-                        this.display();
-                        new Notice('History record deleted');
-                    }
-                }));
-        }
-
-        new Setting(containerEl)
-            .addButton(btn => btn
-                .setButtonText('Clear all')
-                .setWarning()
-                .onClick(async () => {
-                    this.plugin.settings.history = [];
-                    await this.plugin.saveSettings();
-                    this.display();
-                    new Notice('All history cleared');
-                }));
+                });
+                confirmModal.open();
+            });
+        });
     }
 }
 
@@ -283,7 +279,8 @@ class ProviderManagerModal extends Modal {
     onOpen(): void {
         const { contentEl } = this;
         contentEl.empty();
-        contentEl.createEl('h2', { text: 'API providers' });
+
+        new Setting(contentEl).setName('API providers').setHeading();
 
         for (const provider of this.plugin.settings.providers) {
             const setting = new Setting(contentEl)
@@ -360,7 +357,8 @@ class ProviderEditModal extends Modal {
     onOpen(): void {
         const { contentEl } = this;
         contentEl.empty();
-        contentEl.createEl('h2', { text: `Edit ${this.provider.name}` });
+
+        new Setting(contentEl).setName(`Edit ${this.provider.name}`).setHeading();
 
         new Setting(contentEl)
             .setName('Name')
@@ -370,8 +368,7 @@ class ProviderEditModal extends Modal {
             });
 
         new Setting(contentEl)
-            // eslint-disable-next-line obsidianmd/ui/sentence-case
-            .setName('API Key')
+            .setName('API key')
             .addText(text => {
                 text.inputEl.type = 'password';
                 text.setValue(this.provider.apiKey);
@@ -422,6 +419,100 @@ class ProviderEditModal extends Modal {
             .addButton(btn => btn
                 .setButtonText('Cancel')
                 .onClick(() => this.close()));
+    }
+
+    onClose(): void {
+        this.contentEl.empty();
+    }
+}
+
+// ========== 历史记录搜索模态框 ==========
+class HistorySearchModal extends Modal {
+    private inputEl!: HTMLInputElement;
+    private historyItems: Array<{ element: HTMLElement; title: string; platform: string }>;
+    private container: HTMLElement;
+
+    constructor(
+        app: App,
+        items: Array<{ element: HTMLElement; title: string; platform: string }>,
+        container: HTMLElement
+    ) {
+        super(app);
+        this.historyItems = items;
+        this.container = container;
+    }
+
+    onOpen(): void {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.createEl('h2', { text: 'Search' });
+
+        this.inputEl = contentEl.createEl('input', { type: 'text', placeholder: 'Enter title or platform...', cls: 'history-search-modal-input' });
+        this.inputEl.focus();
+
+        const buttonDiv = contentEl.createDiv({ cls: 'confirm-modal-buttons' });
+        const searchBtn = buttonDiv.createEl('button', { text: 'Search' });
+        const cancelBtn = buttonDiv.createEl('button', { text: 'Cancel' });
+
+        searchBtn.onclick = () => {
+            const keyword = this.inputEl.value.trim().toLowerCase();
+            if (!keyword) {
+                new Notice('Please enter a keyword');
+                return;
+            }
+            const index = this.historyItems.findIndex(item =>
+                item.title.toLowerCase().includes(keyword) ||
+                item.platform.toLowerCase().includes(keyword)
+            );
+            if (index === -1) {
+                new Notice('No matching history record found');
+                this.close();
+                return;
+            }
+            const targetElement = this.historyItems[index].element;
+            targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            targetElement.classList.add('history-item-highlight');
+            setTimeout(() => {
+                targetElement.classList.remove('history-item-highlight');
+            }, 2000);
+            this.close();
+        };
+
+        cancelBtn.onclick = () => this.close();
+        this.inputEl.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchBtn.click();
+        });
+    }
+
+    onClose(): void {
+        this.contentEl.empty();
+    }
+}
+
+// ========== 确认模态框 ==========
+class ConfirmModal extends Modal {
+    constructor(
+        app: App,
+        private message: string,
+        private onConfirm: (confirmed: boolean) => void
+    ) {
+        super(app);
+    }
+
+    onOpen(): void {
+        const { contentEl } = this;
+        contentEl.createEl('p', { text: this.message });
+        const buttonDiv = contentEl.createDiv({ cls: 'confirm-modal-buttons' });
+        const yesBtn = buttonDiv.createEl('button', { text: 'Yes' });
+        yesBtn.onclick = () => {
+            this.close();
+            this.onConfirm(true);
+        };
+        const noBtn = buttonDiv.createEl('button', { text: 'No' });
+        noBtn.onclick = () => {
+            this.close();
+            this.onConfirm(false);
+        };
     }
 
     onClose(): void {
