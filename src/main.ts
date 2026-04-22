@@ -1,7 +1,7 @@
 // src/main.ts
 import { App, Editor, Notice, Plugin, Modal, TFile, requestUrl, MarkdownView, MarkdownRenderChild } from 'obsidian';
 import { SmartVideoSummarizerSettingTab, SmartVideoSummarizerSettings, DEFAULT_SETTINGS, ApiProvider, HistoryItem } from './settings';
-import { fetchTranscript} from './transcript';
+import { fetchTranscript } from './transcript';
 import { getApiAdapter, ApiCallOptions } from './api';
 import { VIDEO_PLAYER_VIEW_TYPE, VideoPlayerView } from './playerView';
 import {
@@ -9,6 +9,7 @@ import {
     YOUTUBE_ID_REGEX,
     BILIBILI_ID_REGEX,
     TIMESTAMP_HEADING,
+    JOTTING_HEADING,
     TIMESTAMP_MARKDOWN_TEMPLATE,
     DEFAULT_FOLDER_NAME,
     MAX_TRANSCRIPT_CHARS,
@@ -67,7 +68,7 @@ interface SummaryParseResult {
     tags: string[];
 }
 
-// ========== 时间戳链接处理器（MarkdownRenderChild） ==========
+// ========== 时间戳链接处理器 ==========
 class TimestampLinkHandler extends MarkdownRenderChild {
     constructor(containerEl: HTMLElement, private plugin: SmartVideoSummarizerPlugin) {
         super(containerEl);
@@ -84,7 +85,6 @@ class TimestampLinkHandler extends MarkdownRenderChild {
             const timeAttr = link.getAttribute('data-time');
             if (timeAttr) {
                 const time = parseInt(timeAttr, 10);
-                // 避免 async 回调直接返回 Promise，使用 void 包装
                 link.addEventListener('click', (e: MouseEvent) => {
                     e.preventDefault();
                     void (async () => {
@@ -112,13 +112,13 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         this.registerView(VIDEO_PLAYER_VIEW_TYPE, (leaf) => new VideoPlayerView(leaf, this));
 
         this.addRibbonIcon('video', '智能视频摘要', () => this.openUrlInputModal());
-        
-        this.addCommand({ 
-            id: 'open-video-summarizer', 
-            name: '打开视频摘要', 
-            callback: () => this.openUrlInputModal() 
+
+        this.addCommand({
+            id: 'open-video-summarizer',
+            name: '打开视频摘要',
+            callback: () => this.openUrlInputModal()
         });
-        
+
         this.addCommand({
             id: 'summarize-from-selected-url',
             name: '从选中的 URL 生成摘要',
@@ -131,22 +131,21 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
                 }
             }
         });
-        
+
         this.addCommand({
             id: 'insert-timestamp-in-video-note',
             name: '在当前视频摘要笔记中插入时间戳',
             callback: () => this.insertTimestampInCurrentVideoNote()
         });
-        
+
         this.addCommand({
             id: 'open-video-player',
             name: '打开视频播放器',
             callback: () => this.activatePlayerView()
         });
-        
+
         this.addSettingTab(new SmartVideoSummarizerSettingTab(this.app, this));
-        
-        // 粘贴自动总结（受设置开关控制）
+
         this.registerEvent(
             this.app.workspace.on('editor-paste', (evt: ClipboardEvent) => {
                 if (!this.settings.autoSummarizeOnPaste) return;
@@ -156,12 +155,11 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
                 }
             })
         );
-        
-        // 注册 Markdown 后处理器
+
         this.registerMarkdownPostProcessor((el, ctx) => {
             ctx.addChild(new TimestampLinkHandler(el, this));
         });
-        
+
         console.debug('Smart Video Summarizer 插件已加载');
     }
 
@@ -178,8 +176,8 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         if (saved) this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
     }
 
-    async saveSettings(): Promise<void> { 
-        await this.saveData(this.settings); 
+    async saveSettings(): Promise<void> {
+        await this.saveData(this.settings);
     }
 
     private async migrateOldSettings(): Promise<void> {
@@ -218,7 +216,7 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
             });
         }
         if (newProviders.length === 0) newProviders.push(...DEFAULT_SETTINGS.providers);
-        
+
         this.settings.providers = newProviders;
         if (old.aiProvider === 'gemini') this.settings.activeProviderId = 'gemini-default';
         else if (old.aiProvider === 'grok') this.settings.activeProviderId = 'grok-default';
@@ -246,24 +244,24 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
             const videoId = this.extractYouTubeId(url);
             if (!videoId) return null;
             try {
-                const res = await requestUrl({ 
-                    url: `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json` 
+                const res = await requestUrl({
+                    url: `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
                 });
                 const data = res.json as YouTubeOEmbedResponse;
-                return { 
-                    platform: 'youtube', 
-                    id: videoId, 
-                    title: data.title, 
-                    author: data.author_name, 
-                    url: `https://www.youtube.com/watch?v=${videoId}` 
+                return {
+                    platform: 'youtube',
+                    id: videoId,
+                    title: data.title,
+                    author: data.author_name,
+                    url: `https://www.youtube.com/watch?v=${videoId}`
                 };
             } catch {
-                return { 
-                    platform: 'youtube', 
-                    id: videoId, 
-                    title: 'YouTube 视频', 
-                    author: 'Unknown', 
-                    url: `https://www.youtube.com/watch?v=${videoId}` 
+                return {
+                    platform: 'youtube',
+                    id: videoId,
+                    title: 'YouTube 视频',
+                    author: 'Unknown',
+                    url: `https://www.youtube.com/watch?v=${videoId}`
                 };
             }
         } else if (url.includes('bilibili.com')) {
@@ -300,7 +298,7 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         return match ? match[0] : null;
     }
 
-    // ========== 字幕获取（整合本地导入） ==========
+    // ========== 字幕获取 ==========
     private async fetchTranscriptWithFallback(url: string): Promise<{ text: string; usedFallback: boolean }> {
         try {
             const transcript = await fetchTranscript(url);
@@ -315,24 +313,22 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         if (this.settings.noCaptionStrategy === 'skip') {
             throw new Error(NOTICE_MESSAGES.NO_VALID_SUBTITLE);
         }
-        
+
         if (this.settings.noCaptionStrategy === 'local') {
             const localText = await this.importLocalSubtitle();
             if (localText && localText.length > 0) {
                 return { text: localText, usedFallback: true };
             }
         }
-        
+
         return { text: '【无法获取字幕，将基于元数据生成摘要】', usedFallback: true };
     }
 
-    // ========== 本地字幕导入 ==========
     private async importLocalSubtitle(): Promise<string | null> {
         return new Promise((resolve) => {
             const input = document.createElement('input');
             input.type = 'file';
             input.accept = '.srt,.vtt,.txt,.ass';
-            
             input.onchange = async () => {
                 const file = input.files?.[0];
                 if (!file) {
@@ -367,7 +363,6 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         } else if (filename.endsWith('.ass')) {
             const lines = content.split('\n');
             const dialogueLines = lines.filter(line => line.startsWith('Dialogue:'));
-            // 注意：ASS 的 Dialogue 行格式固定，Text 字段可能包含逗号，使用 slice(9) 取后续所有部分正确。
             return dialogueLines
                 .map(line => {
                     const parts = line.split(',');
@@ -383,7 +378,7 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         }
     }
 
-    // ========== 核心流程：生成摘要 ==========
+    // ========== 生成摘要主流程 ==========
     async generateSummaryFromUrl(url: string): Promise<void> {
         const loadingNotice = new Notice(NOTICE_MESSAGES.GENERATING, 0);
         try {
@@ -391,7 +386,7 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
             if (!videoInfo) throw new Error(NOTICE_MESSAGES.NO_VIDEO_INFO);
 
             const { text: transcript, usedFallback } = await this.fetchTranscriptWithFallback(url);
-            
+
             if (!transcript || (transcript.length < 100 && !transcript.includes('【无法获取字幕】'))) {
                 new Notice(NOTICE_MESSAGES.NO_CAPTION_FALLBACK);
             }
@@ -399,8 +394,26 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
             const summaryResult = await this.summarizeLongTranscript(videoInfo, transcript, usedFallback);
             const filePath = await this.saveSummaryToNote(videoInfo, summaryResult.content, summaryResult.tags, transcript);
             await this.addToHistory(videoInfo.url, videoInfo.title, videoInfo.platform, filePath);
-            
+
             await this.app.workspace.openLinkText(filePath, '', false);
+
+            await new Promise(resolve => setTimeout(resolve, 200));
+            const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+            if (activeView) {
+                const editor = activeView.editor;
+                const content = editor.getValue();
+                const lines = content.split('\n');
+                const headingIndex = lines.findIndex(line => line.includes(JOTTING_HEADING));
+                if (headingIndex !== -1) {
+                    let cursorLine = headingIndex + 1;
+                    while (cursorLine < lines.length && lines[cursorLine].trim() !== '') {
+                        cursorLine++;
+                    }
+                    editor.setCursor({ line: cursorLine, ch: 0 });
+                    editor.scrollIntoView({ from: editor.getCursor(), to: editor.getCursor() });
+                }
+            }
+
             new Notice(NOTICE_MESSAGES.GENERATED);
 
             if (this.settings.enableMiniPlayer) {
@@ -416,12 +429,10 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         }
     }
 
-    // ========== 长字幕分段摘要 ==========
     private async summarizeLongTranscript(videoInfo: VideoInfo, transcript: string, usedFallback: boolean): Promise<SummaryParseResult> {
         if (transcript.length <= MAX_TRANSCRIPT_CHARS) {
             return await this.generateAISummaryWithTags(videoInfo, transcript, usedFallback);
         }
-        
         const chunks = this.splitTranscript(transcript, MAX_TRANSCRIPT_CHARS);
         const chunkSummaries: string[] = [];
         for (let i = 0; i < chunks.length; i++) {
@@ -433,12 +444,7 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         return await this.generateAISummaryWithTags(videoInfo, combined, usedFallback);
     }
 
-    /**
-     * 将字幕分割为句子数组，支持中英文标点且不依赖空格。
-     * 修复原正则 \s+ 在纯中文无空格时失效的问题。
-     */
     private splitTranscript(transcript: string, maxSize: number): string[] {
-        // 使用 \s* 匹配零个或多个空白，确保无空格时也能正确分割
         const sentences = transcript.split(/(?<=[.!?。！？])\s*/);
         const chunks: string[] = [];
         let current = '';
@@ -454,19 +460,17 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         return chunks;
     }
 
-    // ========== AI 摘要生成（带 tags 解析） ==========
     async generateAISummaryWithTags(videoInfo: VideoInfo, transcript: string, usedFallback: boolean): Promise<SummaryParseResult> {
         const prompt = this.buildPrompt(videoInfo, transcript, usedFallback);
         const provider = this.settings.providers.find(p => p.id === this.settings.activeProviderId);
         if (!provider) throw new Error(NOTICE_MESSAGES.NO_ACTIVE_PROVIDER);
         if (!provider.apiKey) throw new Error(NOTICE_MESSAGES.API_KEY_MISSING(provider.name));
-        
+
         const adapter = getApiAdapter(provider);
         const options: ApiCallOptions = {
             temperature: this.settings.temperature,
             maxTokens: this.settings.maxTokens,
         };
-        
         const aiResponse = await adapter.call(prompt, provider, options);
         return this.parseSummaryResponse(aiResponse);
     }
@@ -511,7 +515,7 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
 ### 🔑 关键结论
 列出视频的核心结论（每个结论用 [[结论关键词]] 格式包裹）
 
-### 📚 技术术语解释
+### 📚 专业术语
 解释视频中出现的专业术语（每个术语用 [[术语]] 格式包裹）
 
 ### 🏷️ 标签建议
@@ -521,18 +525,17 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         return base;
     }
 
-    // ========== 笔记保存 ==========
     async saveSummaryToNote(videoInfo: VideoInfo, summary: string, tags: string[], transcript: string): Promise<string> {
         const folder = this.settings.defaultFolder || DEFAULT_FOLDER_NAME;
         const folderExists = this.app.vault.getAbstractFileByPath(folder);
         if (!folderExists) await this.app.vault.createFolder(folder);
-        
+
         const safeTitle = videoInfo.title.replace(/[\\/:*?"<>|]/g, '_');
         const fileName = `${folder}/${safeTitle}_摘要.md`;
-        
+
         const tagsArray = tags.length > 0 ? tags.map(t => `"${t}"`).join(', ') : '';
         const aliases = `"${videoInfo.title}"`;
-        
+
         const content = `---
 title: ${videoInfo.title}
 author: ${videoInfo.author}
@@ -550,7 +553,7 @@ aliases: [${aliases}]
 ${summary}
 
 ---
-## 用户记录区
+## 火花记录
 
 ### 时间戳
 
@@ -561,7 +564,7 @@ ${summary}
 
 ${transcript.substring(0, MAX_APPENDIX_CHARS)}${transcript.length > MAX_APPENDIX_CHARS ? '...' : ''}
 `;
-        
+
         const existing = this.app.vault.getAbstractFileByPath(fileName);
         if (existing && existing instanceof TFile) {
             await this.app.vault.modify(existing, content);
@@ -571,28 +574,23 @@ ${transcript.substring(0, MAX_APPENDIX_CHARS)}${transcript.length > MAX_APPENDIX
         return fileName;
     }
 
-    // ========== 笔记管理方法（供播放器调用） ==========
     async getOrCreateSummaryNote(url: string): Promise<string | null> {
         const videoInfo = await this.fetchVideoInfo(url);
         if (!videoInfo) return null;
-        
+
         const folder = this.settings.defaultFolder || DEFAULT_FOLDER_NAME;
         const safeTitle = videoInfo.title.replace(/[\\/:*?"<>|]/g, '_');
         const summaryPath = `${folder}/${safeTitle}_摘要.md`;
-        
         if (this.app.vault.getAbstractFileByPath(summaryPath) instanceof TFile) {
             return summaryPath;
         }
-        
         const notePath = `${folder}/${safeTitle}_笔记.md`;
         if (this.app.vault.getAbstractFileByPath(notePath) instanceof TFile) {
             return notePath;
         }
-        
         if (!(this.app.vault.getAbstractFileByPath(folder) instanceof TFile)) {
             await this.app.vault.createFolder(folder);
         }
-        
         const content = `---
 title: ${videoInfo.title}
 author: ${videoInfo.author}
@@ -608,7 +606,7 @@ aliases: ["${videoInfo.title}"]
 > 视频链接：[${videoInfo.url}](${videoInfo.url})
 
 ---
-## 用户记录区
+## 火花记录
 
 ### 时间戳
 
@@ -619,50 +617,82 @@ aliases: ["${videoInfo.title}"]
         return notePath;
     }
 
-    // ========== 时间戳插入功能 ==========
-    async insertTimestampInCurrentVideoNote(): Promise<void> {
-        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-        if (!activeView) {
-            new Notice(NOTICE_MESSAGES.OPEN_VIDEO_NOTE_FIRST);
-            return;
-        }
-
-        const file = activeView.file;
-        if (!file) return;
-
-        const cache = this.app.metadataCache.getFileCache(file);
-        const frontmatter = cache?.frontmatter as VideoNoteFrontmatter | undefined;
-        const videoUrl = frontmatter?.video_url;
-
-        if (!videoUrl) {
-            new Notice(NOTICE_MESSAGES.NOT_VIDEO_NOTE);
-            return;
-        }
-
-        const editor = activeView.editor;
-        const content = editor.getValue();
-        const lines = content.split('\n');
-        let headingIndex = lines.findIndex(line => line.includes(TIMESTAMP_HEADING));
-
-        if (headingIndex === -1) {
-            new Notice(NOTICE_MESSAGES.TIMESTAMP_HEADING_NOT_FOUND);
-            return;
-        }
-
-        const now = new Date();
-        const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
-        const timestampMarkdown = TIMESTAMP_MARKDOWN_TEMPLATE.replace('{time}', timeStr);
-
-        let insertLine = headingIndex + 1;
-        while (insertLine < lines.length && lines[insertLine].trim() !== "") {
-            insertLine++;
-        }
-
-        editor.replaceRange(timestampMarkdown, { line: insertLine, ch: 0 });
-        editor.setCursor({ line: insertLine, ch: timestampMarkdown.length });
-        editor.scrollIntoView({ from: editor.getCursor(), to: editor.getCursor() });
-        new Notice(NOTICE_MESSAGES.TIMESTAMP_INSERTED);
+    // ========== 插入时间戳（修正废弃 API） ==========
+async insertTimestampInCurrentVideoNote(): Promise<void> {
+    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!activeView) {
+        new Notice(NOTICE_MESSAGES.OPEN_VIDEO_NOTE_FIRST);
+        return;
     }
+
+    const file = activeView.file;
+    if (!file) return;
+
+    const cache = this.app.metadataCache.getFileCache(file);
+    const frontmatter = cache?.frontmatter as VideoNoteFrontmatter | undefined;
+    const videoUrl = frontmatter?.video_url;
+
+    if (!videoUrl) {
+        new Notice(NOTICE_MESSAGES.NOT_VIDEO_NOTE);
+        return;
+    }
+
+    // ✅ 从视图直接获取叶子，不再使用已废弃的 workspace.activeLeaf
+    const leaf = activeView.leaf;
+    const originalMode = activeView.getMode();
+
+    // 如果当前是阅读模式，先切换到编辑模式
+    if (originalMode !== 'source') {
+        await leaf.setViewState({
+            type: 'markdown',
+            state: { file: file.path, mode: 'source' }
+        });
+        // 等待编辑器实例完全就绪
+        await new Promise(resolve => setTimeout(resolve, 50));
+    }
+
+    // 重新获取视图和编辑器（模式切换后实例可能变化）
+    const editorView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!editorView) return;
+    const editor = editorView.editor;
+    if (!editor) return;
+
+    const content = editor.getValue();
+    const lines = content.split('\n');
+    const headingIndex = lines.findIndex(line => line.includes(TIMESTAMP_HEADING));
+
+    if (headingIndex === -1) {
+        // 找不到标题时，恢复到原模式再提示
+        if (originalMode !== 'source') {
+            await leaf.setViewState({
+                type: 'markdown',
+                state: { file: file.path, mode: originalMode }
+            });
+        }
+        new Notice(NOTICE_MESSAGES.TIMESTAMP_HEADING_NOT_FOUND);
+        return;
+    }
+
+    let insertLine = headingIndex + 1;
+    while (insertLine < lines.length && lines[insertLine].trim() !== '') {
+        insertLine++;
+    }
+
+    const now = new Date();
+    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    const timestampMarkdown = TIMESTAMP_MARKDOWN_TEMPLATE.replace('{time}', timeStr);
+
+    editor.replaceRange(timestampMarkdown, { line: insertLine, ch: 0 });
+    await this.app.vault.modify(file, editor.getValue());
+
+    // 切回阅读模式（使时间戳变为可点击链接）
+    await leaf.setViewState({
+        type: 'markdown',
+        state: { file: file.path, mode: 'preview' }
+    });
+
+    new Notice(NOTICE_MESSAGES.TIMESTAMP_INSERTED);
+}
 
     // ========== 历史记录 ==========
     async addToHistory(url: string, title: string, platform: string, summaryPath?: string): Promise<void> {
@@ -676,22 +706,18 @@ aliases: ["${videoInfo.title}"]
         await this.saveSettings();
     }
 
-    // ========== 播放器管理（完全修复类型错误，保留位置偏好） ==========
+    // ========== 播放器管理 ==========
     async activatePlayerView(): Promise<VideoPlayerView | null> {
         const { workspace } = this.app;
-        // 先查找已存在的播放器叶子
         let leaf = workspace.getLeavesOfType(VIDEO_PLAYER_VIEW_TYPE)[0] ?? null;
 
         if (!leaf) {
-            // 定义创建新叶子的工厂函数
             const createLeaf = () => workspace.getLeaf('split', 'vertical');
-            // 根据用户设置优先获取侧边栏叶子，若无则创建新叶子
             if (this.settings.playerPosition === 'left') {
                 leaf = workspace.getLeftLeaf(false) ?? createLeaf();
             } else {
                 leaf = workspace.getRightLeaf(false) ?? createLeaf();
             }
-            // 极端情况下仍可能为 null（无可用区域），则放弃创建
             if (!leaf) {
                 console.error('无法创建播放器叶子');
                 return null;
@@ -703,8 +729,7 @@ aliases: ["${videoInfo.title}"]
             void workspace.revealLeaf(leaf);
             return leaf.view;
         }
-        // 视图类型不匹配，记录警告便于调试
-        console.warn('播放器叶子存在但视图类型不匹配，预期 VideoPlayerView，实际为', leaf.view);
+        console.warn('播放器叶子存在但视图类型不匹配');
         return null;
     }
 }
@@ -724,16 +749,14 @@ class UrlInputModal extends Modal {
         const { contentEl } = this;
         contentEl.empty();
         contentEl.createEl('h2', { text: MODAL_TITLE });
-        this.inputEl = contentEl.createEl('input', { 
-            type: 'text', 
-            placeholder: INPUT_PLACEHOLDER, 
-            cls: 'video-url-input' 
+        this.inputEl = contentEl.createEl('input', {
+            type: 'text',
+            placeholder: INPUT_PLACEHOLDER,
+            cls: 'video-url-input'
         });
-        
         const btnContainer = contentEl.createDiv({ cls: 'video-modal-button-container' });
         const submitBtn = btnContainer.createEl('button', { text: BUTTON_SUMMARIZE, cls: 'video-modal-button' });
         const cancelBtn = btnContainer.createEl('button', { text: BUTTON_CANCEL, cls: 'video-modal-button' });
-        
         submitBtn.onclick = () => {
             if (this.isProcessing) return;
             const url = this.inputEl.value.trim();
@@ -748,15 +771,14 @@ class UrlInputModal extends Modal {
                     });
             }
         };
-        
         cancelBtn.onclick = () => this.close();
-        this.inputEl.addEventListener('keypress', e => { 
-            if (e.key === 'Enter') submitBtn.click(); 
+        this.inputEl.addEventListener('keypress', e => {
+            if (e.key === 'Enter') submitBtn.click();
         });
         this.inputEl.focus();
     }
 
-    onClose(): void { 
-        this.contentEl.empty(); 
+    onClose(): void {
+        this.contentEl.empty();
     }
 }

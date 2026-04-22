@@ -2,24 +2,29 @@
 
 // ========== 视频 URL 识别 ==========
 export const VIDEO_URL_PATTERN = /youtube\.com|youtu\.be|bilibili\.com/;
-
 export const YOUTUBE_ID_REGEX = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
 export const BILIBILI_ID_REGEX = /BV[0-9A-Za-z]{10}/;
 
-// ========== 笔记模板 ==========
+// ========== 笔记模板标题 ==========
+export const SPARK_RECORD_HEADING = '## 火花记录';
 export const TIMESTAMP_HEADING = '### 时间戳';
 export const JOTTING_HEADING = '### 随手记';
-export const TIMESTAMP_PREFIX = '⏰';
-export const TIMESTAMP_MARKDOWN_TEMPLATE = `\n[${TIMESTAMP_PREFIX} {time}] `;
 
-// ========== 默认配置 ==========
+// ========== 时间戳格式 ==========
+export const TIMESTAMP_PREFIX = '📌';
+export const TIMESTAMP_MARKDOWN_TEMPLATE = `[${TIMESTAMP_PREFIX} {time}] `;
+
+// ========== 默认文件夹 ==========
 export const DEFAULT_FOLDER_NAME = 'Video Summaries';
 
 // ========== 字幕截断长度 ==========
 export const MAX_TRANSCRIPT_CHARS = 8000;
 export const MAX_APPENDIX_CHARS = 3000;
 
-// ========== 用户提示消息 ==========
+// ========== 请求延迟 ==========
+export const RETRY_DELAY = 1000;
+
+// ========== 提示消息 ==========
 export const NOTICE_MESSAGES = {
     NOT_VIDEO_NOTE: '当前笔记不是视频摘要笔记，无法插入时间戳',
     OPEN_VIDEO_NOTE_FIRST: '请先打开一个视频摘要笔记',
@@ -42,26 +47,17 @@ export const NOTICE_MESSAGES = {
     HISTORY_DELETED: 'History record deleted',
     HISTORY_CLEARED: 'All history cleared',
     SELECT_VALID_URL: '请先选中一个有效的视频链接',
+    CURSOR_POSITIONED: '光标已定位到随手记区域',
 } as const;
 
-// ========== UI 模态框文本（新增，便于统一管理） ==========
+// ========== UI 模态框文本 ==========
 export const MODAL_TITLE = '输入视频链接';
 export const INPUT_PLACEHOLDER = '输入 YouTube 或 B站 视频链接...';
 export const BUTTON_SUMMARIZE = '一键总结';
 export const BUTTON_CANCEL = '取消';
 export const BUTTON_PROCESSING = '处理中...';
 
-// ========== API 相关常量 ==========
-// export const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
-// export const DEEPSEEK_BASE_URL = 'https://api.deepseek.com/v1';
-// export const GROK_BASE_URL = 'https://api.x.ai/v1';
-
-// ========== 请求超时（未使用，若 api.ts 需要可取消注释）==========
-// export const REQUEST_TIMEOUT = 30000;
-export const RETRY_DELAY = 1000;  // 在 summarizeLongTranscript 中使用
-// export const MAX_RETRIES = 1;
-
-// ========== 播放器 iframe ==========
+// ========== 播放器 iframe 参数 ==========
 export const YOUTUBE_EMBED_BASE = 'https://www.youtube.com/embed/';
 export const YOUTUBE_EMBED_PARAMS = '?enablejsapi=1&autoplay=0';
 export const BILIBILI_EMBED_BASE = 'https://player.bilibili.com/player.html';

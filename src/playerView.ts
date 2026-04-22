@@ -1,4 +1,5 @@
 // src/playerView.ts
+// src/playerView.ts
 import { ItemView, WorkspaceLeaf, Notice } from 'obsidian';
 import type SmartVideoSummarizerPlugin from './main';
 import {
@@ -116,9 +117,11 @@ export class VideoPlayerView extends ItemView {
             this.iframe.contentWindow?.postMessage(JSON.stringify(command), '*');
             new Notice(NOTICE_MESSAGES.SEEK_SUCCESS_YOUTUBE(timeStr));
         } else if (this.currentPlatform === 'bilibili') {
-            const currentSrc = this.iframe.src;
-            const baseSrc = currentSrc.split('&t=')[0];
-            const newSrc = `${baseSrc}&t=${seconds}`;
+            // B站跳转需要重新加载 iframe 并添加时间参数
+            let currentSrc = this.iframe.src;
+            currentSrc = currentSrc.replace(/[?&]t=\d+/, '').replace(/[?&]autoplay=\d/, '');
+            const separator = currentSrc.includes('?') ? '&' : '?';
+            const newSrc = `${currentSrc}${separator}t=${seconds}&autoplay=1`;
             this.iframe.src = newSrc;
             new Notice(NOTICE_MESSAGES.SEEK_SUCCESS_BILIBILI(timeStr));
         }
@@ -153,6 +156,6 @@ export class VideoPlayerView extends ItemView {
     }
 
     async onClose(): Promise<void> {
-        // 资源由 Obsidian 自动回收
+        // 清理资源
     }
 }
