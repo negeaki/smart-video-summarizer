@@ -8,13 +8,14 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "sourceMap": true,
-    "outDir": "dist",
-    "rootDir": "src",
-    "allowSyntheticDefaultImports": true,
     "useUnknownInCatchVariables": true,
-    "strictBindCallApply": true
+    "strictBindCallApply": true,
+    "isolatedModules": true
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

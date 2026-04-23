@@ -197,3 +197,28 @@
 .clickable-icon:hover {
     background: var(--background-modifier-hover);
 }
+.timestamp-modal {
+    min-width: 320px;
+}
+.timestamp-input {
+    width: 100%;
+}
+.timestamp-help-box {
+    background: var(--background-secondary);
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    font-size: 0.9em;
+    color: var(--text-muted);
+}
+.timestamp-input-label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+    color: var(--text-normal);
+}
+.timestamp-input {
+    width: 100%;
+    padding: 8px;
+    font-size: 1em;
+}

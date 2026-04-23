@@ -1,9 +1,5 @@
+// api.ts
 import { requestUrl, RequestUrlParam } from 'obsidian';
-
-// 扩展 RequestUrlParam 以支持 timeout（Obsidian 实际支持，但类型定义可能缺失）
-interface ExtendedRequestUrlParam extends RequestUrlParam {
-    timeout?: number;
-}
 
 export interface ApiProvider {
     id: string;
@@ -11,6 +7,10 @@ export interface ApiProvider {
     apiKey: string;
     baseUrl: string;
     model: string;
+}
+
+export interface ExtendedApiProvider extends ApiProvider {
+    isCustom: boolean;
 }
 
 export interface ApiCallOptions {
@@ -23,7 +23,12 @@ export interface ApiAdapter {
     testConnection(provider: ApiProvider): Promise<boolean>;
 }
 
-// 定义响应类型
+// 扩展请求参数以支持超时
+interface ExtendedRequestUrlParam extends RequestUrlParam {
+    timeout?: number;
+}
+
+// 响应类型定义
 interface GeminiResponse {
     candidates?: Array<{
         content?: {
@@ -38,7 +43,7 @@ interface OpenAiCompatibleResponse {
     }>;
 }
 
-// 带重试的请求辅助函数（无 any，明确类型）
+// 带重试的请求辅助函数
 async function requestWithRetry(
     url: string,
     options: Omit<ExtendedRequestUrlParam, 'url'>,
@@ -50,14 +55,12 @@ async function requestWithRetry(
             const requestOptions: ExtendedRequestUrlParam = { url, ...options, timeout: 30000 };
             return await requestUrl(requestOptions);
         } catch (err) {
-            // 确保错误对象是 Error 实例
             lastError = err instanceof Error ? err : new Error(String(err));
             if (i < retries) {
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
         }
     }
-    // 抛出明确的错误（不会为 null）
     throw lastError ?? new Error('Request failed after retries');
 }
 

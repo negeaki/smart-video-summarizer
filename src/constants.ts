@@ -1,5 +1,3 @@
-// src/constants.ts
-
 // ========== 视频 URL 识别 ==========
 export const VIDEO_URL_PATTERN = /youtube\.com|youtu\.be|bilibili\.com/;
 export const YOUTUBE_ID_REGEX = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
@@ -8,7 +6,7 @@ export const BILIBILI_ID_REGEX = /BV[0-9A-Za-z]{10}/;
 // ========== 笔记模板标题 ==========
 export const SPARK_RECORD_HEADING = '## 火花记录';
 export const TIMESTAMP_HEADING = '### 时间戳';
-export const JOTTING_HEADING = '### 随手记';
+// 移除 JOTTING_HEADING
 
 // ========== 时间戳格式 ==========
 export const TIMESTAMP_PREFIX = '📌';
