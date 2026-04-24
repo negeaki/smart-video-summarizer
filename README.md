@@ -1,4 +1,4 @@
-# Obsidian Smart Video Summarizer
+# Smart Video Summarizer for Obsidian 
 
 An Obsidian plugin that automatically fetches subtitles from YouTube and Bilibili videos and uses AI to generate structured summary notes, with an embedded video player and clickable timestamps.
 

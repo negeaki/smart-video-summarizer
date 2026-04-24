@@ -75,21 +75,37 @@ export class TimestampInputModal extends Modal {
         const { contentEl } = this;
         contentEl.empty();
 
-        contentEl.createEl('h2', { text: '输入视频时间戳' });
-        const inputWrapper = contentEl.createDiv({ cls: 'timestamp-input-wrapper' });
-        inputWrapper.createSpan({ text: '格式 mm:ss 或 HH:mm:ss' });
-        const inputEl = inputWrapper.createEl('input', {
+        // 标题
+        contentEl.createEl('h2', { text: '新增时间戳' });
+
+        // 输入框
+        const inputEl = contentEl.createEl('input', {
             type: 'text',
             placeholder: '例如 1:23 或 12:34',
             cls: 'timestamp-input',
         });
+        inputEl.style.width = '100%';
+        inputEl.style.marginBottom = '12px';
         inputEl.focus();
 
-        const btnContainer = contentEl.createDiv({ cls: 'modal-button-container' });
-        const submitBtn = btnContainer.createEl('button', { text: '插入' });
-        const cancelBtn = btnContainer.createEl('button', { text: '取消' });
+        // 底部行：左侧提示文字，右侧按钮
+        const bottomRow = contentEl.createDiv({ cls: 'timestamp-bottom-row' });
+        bottomRow.style.display = 'flex';
+        bottomRow.style.justifyContent = 'space-between';
+        bottomRow.style.alignItems = 'center';
 
-        submitBtn.onclick = () => {
+        // 左侧提示（小字号、不加粗、灰色）
+        const hintSpan = bottomRow.createSpan({ text: '格式 mm:ss 或 HH:mm:ss' });
+        hintSpan.style.fontSize = '0.85em';
+        hintSpan.style.fontWeight = 'normal';
+        hintSpan.style.color = 'var(--text-muted)';
+
+        // 右侧按钮组
+        const btnGroup = bottomRow.createDiv({ cls: 'modal-button-container' });
+        const confirmBtn = btnGroup.createEl('button', { text: '确认' });
+        const cancelBtn = btnGroup.createEl('button', { text: '取消' });
+
+        confirmBtn.onclick = () => {
             const val = inputEl.value.trim();
             const seconds = this.parseTimeString(val);
             if (seconds === null) {
@@ -102,7 +118,7 @@ export class TimestampInputModal extends Modal {
 
         cancelBtn.onclick = () => this.close();
         inputEl.addEventListener('keypress', (e: KeyboardEvent) => {
-            if (e.key === 'Enter') submitBtn.click();
+            if (e.key === 'Enter') confirmBtn.click();
         });
     }
 

@@ -1,10 +1,22 @@
-import { App, PluginSettingTab, Setting, Modal, Notice } from 'obsidian';
+// src/settings.ts
+import { App, PluginSettingTab, Setting, Modal, Notice, setIcon } from 'obsidian';
 import type SmartVideoSummarizerPlugin from './main';
 import { getApiAdapter, ExtendedApiProvider } from './api';
 import { VIDEO_PLAYER_VIEW_TYPE } from './playerView';
-import { NOTICE_MESSAGES } from './constants';
 
-// 类型定义
+// ========== 类型定义 ==========
+export interface SmartVideoSummarizerSettings {
+    providers: ExtendedApiProvider[];
+    activeProviderId: string;
+    temperature: number;
+    maxTokens: number;
+    enableMiniPlayer: boolean;
+    playerPosition: 'left' | 'right';
+    noCaptionStrategy: string;
+    maxHistoryCount: number;
+    history: HistoryItem[];
+}
+
 export interface HistoryItem {
     url: string;
     title: string;
@@ -12,18 +24,8 @@ export interface HistoryItem {
     timestamp: number;
     summaryPath?: string;
 }
-export interface SmartVideoSummarizerSettings {
-    providers: ExtendedApiProvider[];
-    activeProviderId: string;
-    temperature: number;
-    maxTokens: number;
-    enableMiniPlayer: boolean;
-    playerPosition: 'sidebar-left' | 'sidebar-right' | 'center';
-    noCaptionStrategy: string;          // 'metadata' | 'local' | 'skip'
-    maxHistoryCount: number;
-    history: HistoryItem[];
-}
 
+// ========== 默认配置 ==========
 const DEFAULT_PROVIDERS: ExtendedApiProvider[] = [
     {
         id: 'gemini-default',
@@ -49,7 +51,7 @@ export const DEFAULT_SETTINGS: SmartVideoSummarizerSettings = {
     temperature: 0.7,
     maxTokens: 2048,
     enableMiniPlayer: true,
-    playerPosition: 'sidebar-right',
+    playerPosition: 'right',
     noCaptionStrategy: 'metadata',
     maxHistoryCount: 20,
     history: [],
@@ -72,36 +74,36 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        // ---------- 隐私警告 ----------
-        new Setting(containerEl)
-            .setDesc('⚠️ API 密钥以明文保存在 data.json 中，请勿分享该文件。若使用同步，建议将 data.json 加入忽略列表。')
-            .setClass('api-key-warning');
-
-        // ---------- API Provider 分组 ----------
+        // -------------------------------------------------------------
+        // 分组 1: AI Provider
+        // -------------------------------------------------------------
         new Setting(containerEl).setName('API provider').setHeading();
 
+        // Active provider：齿轮图标放在下拉列表左侧
         new Setting(containerEl)
             .setName('Active provider')
+            .addButton(btn => btn
+                .setIcon('gear')
+                .setTooltip('Manage providers')
+                .onClick(() => {
+                    new ProviderManagerModal(this.app, this.plugin).open();
+                }))
             .addDropdown(dropdown => {
                 for (const p of this.plugin.settings.providers) {
                     dropdown.addOption(p.id, p.name);
                 }
-                dropdown.setValue(this.plugin.settings.activeProviderId)
-                    .onChange(async (value) => {
-                        this.plugin.settings.activeProviderId = value;
-                        await this.plugin.saveSettings();
-                    });
-            })
-            .addButton(btn => {
-                btn.setButtonText('Manage')
-                   .setCta()   // Obsidian 主色按钮（紫色）
-                   .onClick(() => new ProviderManagerModal(this.app, this.plugin).open());
+                dropdown.setValue(this.plugin.settings.activeProviderId);
+                dropdown.onChange(async (value) => {
+                    this.plugin.settings.activeProviderId = value;
+                    await this.plugin.saveSettings();
+                });
             });
 
         new Setting(containerEl)
             .setName('Temperature')
-            .setDesc('随机性 (0 = 确定性，1 = 创造性)')
-            .addSlider(slider => slider.setLimits(0, 1, 0.01)
+            .setDesc('Randomness (0 = deterministic, 1 = creative)')
+            .addSlider(slider => slider
+                .setLimits(0, 1, 0.01)
                 .setValue(this.plugin.settings.temperature)
                 .setDynamicTooltip()
                 .onChange(async (value) => {
@@ -111,8 +113,9 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Max tokens')
-            .setDesc('摘要的最大长度（token）')
-            .addSlider(slider => slider.setLimits(100, 8192, 100)
+            .setDesc('Maximum length of the summary')
+            .addSlider(slider => slider
+                .setLimits(100, 8192, 100)
                 .setValue(this.plugin.settings.maxTokens)
                 .setDynamicTooltip()
                 .onChange(async (value) => {
@@ -120,40 +123,36 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        // ---------- Player 分组 ----------
+        // -------------------------------------------------------------
+        // 分组 2: Player
+        // -------------------------------------------------------------
         new Setting(containerEl).setName('Player').setHeading();
 
         new Setting(containerEl)
             .setName('Auto open player')
-            .setDesc('生成摘要后自动打开播放器')
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.enableMiniPlayer)
+            .setDesc('Open player when generating summary')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableMiniPlayer)
                 .onChange(async (value) => {
                     this.plugin.settings.enableMiniPlayer = value;
                     await this.plugin.saveSettings();
                 }));
 
         new Setting(containerEl)
-            .setName('Player position')
-            .setDesc('视频播放器的位置')
-            .addDropdown(dropdown => {
-                dropdown.addOption('sidebar-left', 'Left sidebar');
-                dropdown.addOption('sidebar-right', 'Right sidebar');
-                dropdown.addOption('center', 'Center tab');
-                dropdown.setValue(this.plugin.settings.playerPosition)
-                    .onChange(async (value) => {
-                        this.plugin.settings.playerPosition = value as 'sidebar-left' | 'sidebar-right' | 'center';
-                        await this.plugin.saveSettings();
-                        // 移动播放器后重建视图
-                        const leaves = this.app.workspace.getLeavesOfType(VIDEO_PLAYER_VIEW_TYPE);
-                        leaves.forEach(leaf => leaf.detach());
-                        this.display();
-                    });
-            });
+            .setName('Right sidebar')
+            .setDesc('Enable to show player in right sidebar; disable for left sidebar')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.playerPosition === 'right')
+                .onChange(async (value) => {
+                    this.plugin.settings.playerPosition = value ? 'right' : 'left';
+                    await this.plugin.saveSettings();
+                    const leaves = this.app.workspace.getLeavesOfType(VIDEO_PLAYER_VIEW_TYPE);
+                    for (const leaf of leaves) leaf.detach();
+                    this.display();
+                }));
 
-        // ---------- 无字幕策略 ----------
         new Setting(containerEl)
             .setName('No caption strategy')
-            .setDesc('当视频无官方字幕时的处理方式。选择 "本地导入" 后，生成摘要时会自动弹出文件选择器。')
             .addDropdown(dropdown => dropdown
                 .addOption('metadata', 'Use metadata only')
                 .addOption('local', 'Import local file')
@@ -164,10 +163,13 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        // ---------- 历史记录分组 ----------
+        // -------------------------------------------------------------
+        // 分组 3: History
+        // -------------------------------------------------------------
         new Setting(containerEl).setName('History').setHeading();
 
         const historyContainer = containerEl.createDiv({ cls: 'history-list-container' });
+
         interface HistoryItemEntry {
             element: HTMLElement;
             title: string;
@@ -175,54 +177,51 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
         }
         const historyItems: HistoryItemEntry[] = [];
 
-        const renderHistoryList = (): void => {
+        const renderHistoryList = () => {
             historyContainer.empty();
             historyItems.length = 0;
             const history = this.plugin.settings.history;
-
             for (const item of history) {
                 const itemDiv = historyContainer.createDiv({ cls: 'history-item' });
                 const infoSpan = itemDiv.createSpan({ cls: 'history-info' });
                 infoSpan.setText(`${item.title}  (${new Date(item.timestamp).toLocaleString()} - ${item.platform})`);
-
                 const btnGroup = itemDiv.createSpan({ cls: 'history-buttons' });
-
+                
                 const openBtn = btnGroup.createEl('button', { text: 'Open', cls: 'history-btn' });
                 openBtn.onclick = async () => {
-                    if (item.summaryPath) await this.app.workspace.openLinkText(item.summaryPath, '');
+                    if (item.summaryPath) {
+                        await this.app.workspace.openLinkText(item.summaryPath, '');
+                    }
                     if (this.plugin.settings.enableMiniPlayer) {
                         const player = await this.plugin.activatePlayerView();
                         if (player) player.loadVideo(item.url);
                     }
                 };
-
-                const deleteBtn = btnGroup.createEl('button', { text: '🗑', cls: 'history-btn' });
+                
+                const deleteBtn = btnGroup.createEl('button', { cls: 'history-btn' });
+                setIcon(deleteBtn, 'trash');
                 deleteBtn.setAttribute('aria-label', 'Delete');
                 deleteBtn.onclick = async () => {
-                    const idx = this.plugin.settings.history.findIndex(
-                        h => h.url === item.url && h.timestamp === item.timestamp
-                    );
+                    const idx = this.plugin.settings.history.findIndex(h => h.url === item.url && h.timestamp === item.timestamp);
                     if (idx !== -1) {
                         this.plugin.settings.history.splice(idx, 1);
                         await this.plugin.saveSettings();
                         renderHistoryList();
-                        new Notice(NOTICE_MESSAGES.HISTORY_DELETED);
                     }
                 };
-
+                
                 historyItems.push({ element: itemDiv, title: item.title, platform: item.platform });
             }
-
             if (history.length === 0) {
                 historyContainer.createDiv({ text: 'No history records', cls: 'history-empty' });
             }
         };
-
         renderHistoryList();
 
         new Setting(containerEl)
             .setName('Max entries')
-            .addSlider(slider => slider.setLimits(1, 100, 1)
+            .addSlider(slider => slider
+                .setLimits(1, 100, 1)
                 .setValue(this.plugin.settings.maxHistoryCount)
                 .setDynamicTooltip()
                 .onChange(async (value) => {
@@ -237,30 +236,34 @@ export class SmartVideoSummarizerSettingTab extends PluginSettingTab {
         const actionRow = new Setting(containerEl);
         actionRow.setName('Actions');
         actionRow.addButton(btn => {
-            btn.setButtonText('Search')
-               .onClick(() => new HistorySearchModal(this.app, historyItems, historyContainer).open());
+            btn.setButtonText('Search');
+            btn.onClick(() => {
+                new HistorySearchModal(this.app, historyItems, historyContainer).open();
+            });
         });
         actionRow.addButton(btn => {
-            btn.setButtonText('Clear all')
-               .setWarning()
-               .onClick(() => {
-                   new ConfirmModal(this.app, 'Are you sure you want to clear all history?', (confirmed: boolean) => {
-                       if (confirmed) {
-                           this.plugin.settings.history = [];
-                           this.plugin.saveSettings().then(() => {
-                               this.display();
-                               new Notice(NOTICE_MESSAGES.HISTORY_CLEARED);
-                           });
-                       }
-                   }).open();
-               });
+            btn.setButtonText('Clear all');
+            btn.setWarning();
+            btn.onClick(() => {
+                const confirmModal = new ConfirmModal(this.app, 'Are you sure you want to clear all history?', (confirmed) => {
+                    if (confirmed) {
+                        this.plugin.settings.history = [];
+                        void this.plugin.saveSettings().then(() => {
+                            this.display();
+                            new Notice('All history cleared');
+                        });
+                    }
+                });
+                confirmModal.open();
+            });
         });
     }
 }
 
-// ========== Provider 管理模态框 ==========
+// ========== 提供商管理模态框 ==========
 class ProviderManagerModal extends Modal {
     plugin: SmartVideoSummarizerPlugin;
+
     constructor(app: App, plugin: SmartVideoSummarizerPlugin) {
         super(app);
         this.plugin = plugin;
@@ -269,54 +272,92 @@ class ProviderManagerModal extends Modal {
     onOpen(): void {
         const { contentEl } = this;
         contentEl.empty();
-        contentEl.createEl('h2', { text: 'Manage API Providers' });
 
-        const list = contentEl.createDiv({ cls: 'provider-list' });
-        this.renderProviderList(list);
+        contentEl.createEl('h3', { text: 'API providers', cls: 'setting-heading' });
 
-        new Setting(contentEl)
-            .addButton(btn => {
-                btn.setButtonText('Add custom provider')
-                   .setCta()
-                   .onClick(() => {
-                       new ProviderEditModal(this.app, (provider) => {
-                           this.plugin.settings.providers.push(provider);
-                           this.plugin.saveSettings().then(() => {
-                               this.renderProviderList(list);
-                               if (this.plugin.settings.activeProviderId === '' && this.plugin.settings.providers.length > 0) {
-                                   this.plugin.settings.activeProviderId = this.plugin.settings.providers[0].id;
-                               }
-                           });
-                       }).open();
-                   });
-            });
-    }
+        const activeId = this.plugin.settings.activeProviderId;
 
-    private renderProviderList(container: HTMLElement): void {
-        container.empty();
         for (const provider of this.plugin.settings.providers) {
-            const item = container.createDiv({ cls: 'provider-item' });
-            item.createSpan({ text: `${provider.name} (${provider.isCustom ? '自定义' : '内置'})` });
-            if (!provider.isCustom) {
-                item.createEl('button', { text: '✏️' }).onclick = () => {
-                    new ProviderEditModal(this.app, (updated) => {
+            const setting = new Setting(contentEl)
+                .setName(provider.name)
+                .setDesc(provider.isCustom ? 'Custom' : 'Built-in');
+
+            // 统一内边距、圆角，避免贴边
+            setting.settingEl.style.padding = '6px 12px';
+            setting.settingEl.style.marginBottom = '4px';
+            setting.settingEl.style.borderRadius = '8px';
+            setting.settingEl.style.backgroundColor = 'transparent';
+
+            if (provider.id === activeId) {
+                // 当前生效模型：极淡绿色（叠加在主题背景上）
+                setting.settingEl.style.backgroundColor = 'rgba(100, 200, 100, 0.06)';
+            } else if (!provider.isCustom) {
+                // 非生效的内置模型：极淡蓝色
+                setting.settingEl.style.backgroundColor = 'rgba(100, 150, 230, 0.05)';
+            }
+
+            // 铅笔编辑按钮
+            setting.addButton(btn => btn
+                .setIcon('pencil')
+                .setTooltip('Edit')
+                .onClick(() => {
+                    new ProviderEditModal(this.app, provider, async (updated) => {
                         const idx = this.plugin.settings.providers.findIndex(p => p.id === provider.id);
                         if (idx !== -1) {
                             this.plugin.settings.providers[idx] = updated;
-                            this.plugin.saveSettings().then(() => this.renderProviderList(container));
+                            await this.plugin.saveSettings();
+                            this.onOpen();
                         }
-                    }, provider).open();
-                };
+                    }).open();
+                }));
+
+            // 仅自定义提供者显示垃圾桶删除按钮
+            if (provider.isCustom) {
+                setting.addButton(btn => btn
+                    .setIcon('trash')
+                    .setTooltip('Delete')
+                    .onClick(async () => {
+                        const idx = this.plugin.settings.providers.findIndex(p => p.id === provider.id);
+                        if (idx !== -1) {
+                            this.plugin.settings.providers.splice(idx, 1);
+                            if (this.plugin.settings.activeProviderId === provider.id && this.plugin.settings.providers.length) {
+                                this.plugin.settings.activeProviderId = this.plugin.settings.providers[0].id;
+                            }
+                            await this.plugin.saveSettings();
+                            this.onOpen();
+                        }
+                    }));
             }
-            item.createEl('button', { text: '🗑' }).onclick = async () => {
-                this.plugin.settings.providers = this.plugin.settings.providers.filter(p => p.id !== provider.id);
-                if (this.plugin.settings.activeProviderId === provider.id && this.plugin.settings.providers.length > 0) {
-                    this.plugin.settings.activeProviderId = this.plugin.settings.providers[0].id;
-                }
-                await this.plugin.saveSettings();
-                this.renderProviderList(container);
-            };
         }
+
+        // 警示语（淡暖色背景）
+        const warningDiv = contentEl.createDiv({ cls: 'api-warning-note' });
+        warningDiv.setText('⚠️ Security: API keys are stored in plain text in data.json. Avoid sharing this file; if using cloud sync, exclude .obsidian folder.');
+        warningDiv.style.backgroundColor = '#fff3e0';
+        warningDiv.style.color = '#b85c00';
+        warningDiv.style.padding = '10px 12px';
+        warningDiv.style.margin = '16px 0 8px 0';
+        warningDiv.style.borderRadius = '6px';
+        warningDiv.style.borderLeft = '3px solid #f0ad4e';
+        warningDiv.style.fontSize = '0.9em';
+
+        new Setting(contentEl)
+            .addButton(btn => btn
+                .setButtonText('Add provider')
+                .onClick(async () => {
+                    const newProvider: ExtendedApiProvider = {
+                        id: generateId(),
+                        name: 'New provider',
+                        apiKey: '',
+                        baseUrl: 'https://api.openai.com/v1',
+                        model: 'gpt-3.5-turbo',
+                        isCustom: true,
+                    };
+                    this.plugin.settings.providers.push(newProvider);
+                    this.plugin.settings.activeProviderId = newProvider.id;
+                    await this.plugin.saveSettings();
+                    this.onOpen();
+                }));
     }
 
     onClose(): void {
@@ -324,66 +365,82 @@ class ProviderManagerModal extends Modal {
     }
 }
 
-// ========== Provider 编辑模态框 ==========
+// ========== 提供商编辑模态框 ==========
 class ProviderEditModal extends Modal {
-    private onSubmit: (provider: ExtendedApiProvider) => void;
-    private provider?: ExtendedApiProvider;
-    private nameInput!: HTMLInputElement;
-    private apiKeyInput!: HTMLInputElement;
-    private baseUrlInput!: HTMLInputElement;
-    private modelInput!: HTMLInputElement;
+    private provider: ExtendedApiProvider;
+    private onSubmit: (provider: ExtendedApiProvider) => Promise<void>;
 
-    constructor(app: App, onSubmit: (provider: ExtendedApiProvider) => void, provider?: ExtendedApiProvider) {
+    constructor(app: App, provider: ExtendedApiProvider, onSubmit: (provider: ExtendedApiProvider) => Promise<void>) {
         super(app);
+        this.provider = { ...provider };
         this.onSubmit = onSubmit;
-        this.provider = provider;
     }
 
     onOpen(): void {
         const { contentEl } = this;
         contentEl.empty();
-        contentEl.createEl('h2', { text: this.provider ? 'Edit Provider' : 'Add Provider' });
 
-        new Setting(contentEl).setName('Name').addText(text => {
-            this.nameInput = text.inputEl;
-            if (this.provider) text.setValue(this.provider.name);
-        });
-
-        new Setting(contentEl).setName('API Key').addText(text => {
-            this.apiKeyInput = text.inputEl;
-            if (this.provider) text.setValue(this.provider.apiKey);
-        });
-
-        new Setting(contentEl).setName('Base URL').addText(text => {
-            this.baseUrlInput = text.inputEl;
-            if (this.provider) text.setValue(this.provider.baseUrl);
-        });
-
-        new Setting(contentEl).setName('Model').addText(text => {
-            this.modelInput = text.inputEl;
-            if (this.provider) text.setValue(this.provider.model);
-        });
+        new Setting(contentEl).setName(`Edit ${this.provider.name}`).setHeading();
 
         new Setting(contentEl)
-            .addButton(btn => {
-                btn.setButtonText('Save')
-                   .setCta()
-                   .onClick(() => {
-                       const newProvider: ExtendedApiProvider = {
-                           id: this.provider ? this.provider.id : generateId(),
-                           name: this.nameInput.value,
-                           apiKey: this.apiKeyInput.value,
-                           baseUrl: this.baseUrlInput.value,
-                           model: this.modelInput.value,
-                           isCustom: true,
-                       };
-                       this.onSubmit(newProvider);
-                       this.close();
-                   });
-            })
-            .addButton(btn => {
-                btn.setButtonText('Cancel').onClick(() => this.close());
+            .setName('Name')
+            .addText(text => {
+                text.setValue(this.provider.name);
+                text.onChange(value => this.provider.name = value);
             });
+
+        new Setting(contentEl)
+            .setName('API key')
+            .addText(text => {
+                text.inputEl.type = 'password';
+                text.setValue(this.provider.apiKey);
+                text.onChange(value => this.provider.apiKey = value);
+            });
+
+        new Setting(contentEl)
+            .setName('Base URL')
+            .addText(text => {
+                text.setValue(this.provider.baseUrl);
+                text.onChange(value => this.provider.baseUrl = value);
+            });
+
+        new Setting(contentEl)
+            .setName('Model')
+            .addText(text => {
+                text.setValue(this.provider.model);
+                text.onChange(value => this.provider.model = value);
+            });
+
+        new Setting(contentEl)
+            .addButton(btn => btn
+                .setButtonText('Test')
+                .onClick(async () => {
+                    btn.setButtonText('Testing...');
+                    btn.setDisabled(true);
+                    try {
+                        const adapter = getApiAdapter(this.provider);
+                        const success = await adapter.testConnection(this.provider);
+                        new Notice(success ? 'Connection successful!' : 'Connection failed. Check your API key and base URL.');
+                    } catch (e) {
+                        const error = e instanceof Error ? e : new Error(String(e));
+                        new Notice(`Error: ${error.message}`);
+                    } finally {
+                        btn.setButtonText('Test');
+                        btn.setDisabled(false);
+                    }
+                }));
+
+        new Setting(contentEl)
+            .addButton(btn => btn
+                .setButtonText('Save')
+                .setCta()
+                .onClick(async () => {
+                    await this.onSubmit(this.provider);
+                    this.close();
+                }))
+            .addButton(btn => btn
+                .setButtonText('Cancel')
+                .onClick(() => this.close()));
     }
 
     onClose(): void {
@@ -391,37 +448,62 @@ class ProviderEditModal extends Modal {
     }
 }
 
-// ========== 历史搜索模态框 ==========
+// ========== 历史记录搜索模态框 ==========
 class HistorySearchModal extends Modal {
-    private historyItems: { element: HTMLElement; title: string; platform: string }[];
-    private historyContainer: HTMLElement;
+    private inputEl!: HTMLInputElement;
+    private historyItems: Array<{ element: HTMLElement; title: string; platform: string }>;
+    private container: HTMLElement;
 
-    constructor(app: App, historyItems: { element: HTMLElement; title: string; platform: string }[], historyContainer: HTMLElement) {
+    constructor(
+        app: App,
+        items: Array<{ element: HTMLElement; title: string; platform: string }>,
+        container: HTMLElement
+    ) {
         super(app);
-        this.historyItems = historyItems;
-        this.historyContainer = historyContainer;
+        this.historyItems = items;
+        this.container = container;
     }
 
     onOpen(): void {
         const { contentEl } = this;
         contentEl.empty();
-        contentEl.createEl('h2', { text: 'Search History' });
+        contentEl.createEl('h2', { text: 'Search' });
 
-        const input = contentEl.createEl('input', { type: 'text', placeholder: '输入关键字...' });
-        input.addEventListener('input', () => {
-            const keyword = input.value.toLowerCase();
-            this.historyItems.forEach(item => {
-                const visible = item.title.toLowerCase().includes(keyword) || item.platform.toLowerCase().includes(keyword);
-                item.element.style.display = visible ? '' : 'none';
-            });
+        this.inputEl = contentEl.createEl('input', { type: 'text', placeholder: 'Enter title or platform...', cls: 'history-search-modal-input' });
+        this.inputEl.focus();
+
+        const buttonDiv = contentEl.createDiv({ cls: 'confirm-modal-buttons' });
+        const searchBtn = buttonDiv.createEl('button', { text: 'Search' });
+        const cancelBtn = buttonDiv.createEl('button', { text: 'Cancel' });
+
+        searchBtn.onclick = () => {
+            const keyword = this.inputEl.value.trim().toLowerCase();
+            if (!keyword) {
+                new Notice('Please enter a keyword');
+                return;
+            }
+            const index = this.historyItems.findIndex(item =>
+                item.title.toLowerCase().includes(keyword) ||
+                item.platform.toLowerCase().includes(keyword)
+            );
+            if (index === -1) {
+                new Notice('No matching history record found');
+                this.close();
+                return;
+            }
+            const targetElement = this.historyItems[index].element;
+            targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            targetElement.classList.add('history-item-highlight');
+            setTimeout(() => {
+                targetElement.classList.remove('history-item-highlight');
+            }, 2000);
+            this.close();
+        };
+
+        cancelBtn.onclick = () => this.close();
+        this.inputEl.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchBtn.click();
         });
-
-        new Setting(contentEl)
-            .addButton(btn => btn.setButtonText('Clear Search').onClick(() => {
-                input.value = '';
-                this.historyItems.forEach(item => item.element.style.display = '');
-            }))
-            .addButton(btn => btn.setButtonText('Close').onClick(() => this.close()));
     }
 
     onClose(): void {
@@ -429,24 +511,30 @@ class HistorySearchModal extends Modal {
     }
 }
 
-// ========== 确认弹窗 ==========
+// ========== 确认模态框 ==========
 class ConfirmModal extends Modal {
-    private message: string;
-    private onConfirm: (confirmed: boolean) => void;
-
-    constructor(app: App, message: string, onConfirm: (confirmed: boolean) => void) {
+    constructor(
+        app: App,
+        private message: string,
+        private onConfirm: (confirmed: boolean) => void
+    ) {
         super(app);
-        this.message = message;
-        this.onConfirm = onConfirm;
     }
 
     onOpen(): void {
         const { contentEl } = this;
-        contentEl.empty();
         contentEl.createEl('p', { text: this.message });
-        new Setting(contentEl)
-            .addButton(btn => btn.setButtonText('Confirm').setWarning().onClick(() => { this.onConfirm(true); this.close(); }))
-            .addButton(btn => btn.setButtonText('Cancel').onClick(() => { this.onConfirm(false); this.close(); }));
+        const buttonDiv = contentEl.createDiv({ cls: 'confirm-modal-buttons' });
+        const yesBtn = buttonDiv.createEl('button', { text: 'Yes' });
+        yesBtn.onclick = () => {
+            this.close();
+            this.onConfirm(true);
+        };
+        const noBtn = buttonDiv.createEl('button', { text: 'No' });
+        noBtn.onclick = () => {
+            this.close();
+            this.onConfirm(false);
+        };
     }
 
     onClose(): void {

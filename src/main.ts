@@ -1,6 +1,6 @@
 import {
     App, Editor, Notice, Plugin, TFile, requestUrl,
-    MarkdownView, MarkdownRenderChild, WorkspaceLeaf,
+    MarkdownView, MarkdownRenderChild, WorkspaceLeaf, Modal, Setting
 } from 'obsidian';
 import { SmartVideoSummarizerSettingTab, SmartVideoSummarizerSettings, DEFAULT_SETTINGS } from './settings';
 import { fetchTranscript } from './transcript';
@@ -38,13 +38,10 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         await this.loadSettings();
         await this.migrateOldSettings();
 
-        // 注册播放器视图
         this.registerView(VIDEO_PLAYER_VIEW_TYPE, leaf => new VideoPlayerView(leaf, this));
 
-        // 功能区图标
         this.ribbonIconEl = this.addRibbonIcon('video', '智能视频摘要', () => this.openUrlInputModal());
 
-        // 命令
         this.addCommand({
             id: 'open-video-summarizer',
             name: '打开视频摘要',
@@ -78,15 +75,12 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
             callback: () => this.activatePlayerView(),
         });
 
-        // 设置选项卡
         this.addSettingTab(new SmartVideoSummarizerSettingTab(this.app, this));
 
-        // 注册阅读模式处理器
         this.registerMarkdownPostProcessor((el, ctx) => {
             ctx.addChild(new TimestampLinkHandler(el, this));
         });
 
-        // 注册编辑器扩展
         this.registerEditorExtension(timestampEditExtension(this));
 
         console.debug('Smart Video Summarizer 插件已加载');
@@ -133,7 +127,6 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         else if (old.aiProvider === 'deepseek') this.settings.activeProviderId = 'deepseek-default';
         else this.settings.activeProviderId = newProviders[0].id;
 
-        // 清理旧字段
         delete (this.settings as any).aiProvider;
         delete (this.settings as any).geminiApiKey;
         delete (this.settings as any).grokApiKey;
@@ -190,7 +183,7 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         return match ? match[0] : null;
     }
 
-    // ---------- 字幕获取（含降级） ----------
+    // ---------- 字幕获取 ----------
     private async fetchTranscriptWithFallback(url: string): Promise<{ text: string; usedFallback: boolean }> {
         try {
             const transcript = await fetchTranscript(url);
@@ -209,7 +202,6 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
             if (localText && localText.length > 0) return { text: localText, usedFallback: true };
         }
 
-        // 最后降级为元数据模式
         return { text: '【无法获取字幕，将基于元数据生成摘要】', usedFallback: true };
     }
 
@@ -253,12 +245,19 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         return content.trim();
     }
 
-    // ---------- 摘要生成 ----------
+    // ---------- 摘要生成（含自定义标题弹窗） ----------
     async generateSummaryFromUrl(url: string): Promise<void> {
         const loadingNotice = new Notice(NOTICE_MESSAGES.GENERATING, 0);
         try {
             const videoInfo = await this.fetchVideoInfo(url);
             if (!videoInfo) throw new Error(NOTICE_MESSAGES.NO_VIDEO_INFO);
+
+            // 弹出标题自定义模态框
+            const customSuffix = await this.askForCustomTitle(videoInfo.author);
+            if (customSuffix === null) {
+                new Notice('已取消生成摘要');
+                return;
+            }
 
             const { text: transcript, usedFallback } = await this.fetchTranscriptWithFallback(url);
             if (!transcript || (transcript.length < 100 && !transcript.includes('【无法获取字幕】'))) {
@@ -266,14 +265,12 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
             }
 
             const summaryResult = await this.summarizeLongTranscript(videoInfo, transcript, usedFallback);
-            const filePath = await this.saveSummaryToNote(videoInfo, summaryResult.content, summaryResult.tags, transcript);
+            const filePath = await this.saveSummaryToNote(videoInfo, summaryResult.content, summaryResult.tags, transcript, customSuffix);
             await this.addToHistory(videoInfo.url, videoInfo.title, videoInfo.platform, filePath);
 
-            // 自动打开生成的笔记
             await this.app.workspace.openLinkText(filePath, '', false);
             await new Promise(resolve => setTimeout(resolve, 200));
 
-            // 光标定位到时间戳区域
             const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
             if (activeView) {
                 const editor = activeView.editor;
@@ -289,7 +286,6 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
 
             new Notice(NOTICE_MESSAGES.GENERATED);
 
-            // 自动打开迷你播放器（如果开启）
             if (this.settings.enableMiniPlayer) {
                 const player = await this.activatePlayerView();
                 if (player) player.loadVideo(url);
@@ -303,11 +299,24 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         }
     }
 
+    /**
+     * 弹窗让用户输入自定义标题后缀
+     * @param author 视频作者名，用于默认提示
+     * @returns 用户输入的字符串（已清理非法字符），如果取消则返回 null
+     */
+    private async askForCustomTitle(author: string): Promise<string | null> {
+        return new Promise((resolve) => {
+            const modal = new TitleInputModal(this.app, author, (value) => {
+                resolve(value);
+            });
+            modal.open();
+        });
+    }
+
     private async summarizeLongTranscript(videoInfo: VideoInfo, transcript: string, usedFallback: boolean): Promise<SummaryParseResult> {
         if (transcript.length <= MAX_TRANSCRIPT_CHARS) {
             return await this.generateAISummaryWithTags(videoInfo, transcript, usedFallback);
         }
-        // 长文本分段总结
         const chunks = this.splitTranscript(transcript, MAX_TRANSCRIPT_CHARS);
         const chunkSummaries: string[] = [];
         for (let i = 0; i < chunks.length; i++) {
@@ -369,12 +378,35 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         return base;
     }
 
-    async saveSummaryToNote(videoInfo: VideoInfo, summary: string, tags: string[], transcript: string): Promise<string> {
+    /**
+     * 保存摘要笔记，文件名格式：YYYY-MM-DD_作者名_自定义描述.md
+     * @param customSuffix 用户输入的自定义描述（已清理非法字符）
+     */
+    async saveSummaryToNote(videoInfo: VideoInfo, summary: string, tags: string[], transcript: string, customSuffix: string): Promise<string> {
         const folder = DEFAULT_FOLDER_NAME;
         if (!this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
 
-        const safeTitle = videoInfo.title.replace(/[\\/:*?"<>|]/g, '_');
-        const fileName = `${folder}/${safeTitle}_摘要.md`;
+        // 生成文件名：日期 + 作者 + 自定义后缀
+        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+        let safeAuthor = videoInfo.author.replace(/[\\/:*?"<>|]/g, '_');
+        if (safeAuthor.length > 50) safeAuthor = safeAuthor.slice(0, 50);
+        let safeSuffix = customSuffix ? customSuffix.replace(/[\\/:*?"<>|]/g, '_') : '';
+        if (safeSuffix.length > 100) safeSuffix = safeSuffix.slice(0, 100);
+        
+        let fileName: string;
+        if (safeSuffix) {
+            fileName = `${folder}/${today}_${safeAuthor}_${safeSuffix}.md`;
+        } else {
+            // 无自定义后缀时，使用原标题简化（但尽量保持可读）
+            let fallbackTitle = videoInfo.title.replace(/[\\/:*?"<>|]/g, '_');
+            if (fallbackTitle.length > 80) fallbackTitle = fallbackTitle.slice(0, 80);
+            fileName = `${folder}/${today}_${safeAuthor}_${fallbackTitle}.md`;
+        }
+
+        // 避免文件名过长 (最大200字符)
+        if (fileName.length > 200) {
+            fileName = `${folder}/${today}_${safeAuthor}_note.md`;
+        }
 
         const tagsArray = tags.length > 0 ? tags.map(t => `"${t}"`).join(', ') : '';
         const content = [
@@ -398,7 +430,7 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
             '## 火花记录',
             '',
             '### 时间戳',
-            '', // 空行方便直接插入时间戳
+            '',
             '---',
             '## 附录：视频字幕',
             '',
@@ -516,10 +548,9 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
 
         let leaf: WorkspaceLeaf | null = null;
         const pos = this.settings.playerPosition;
-        if (pos === 'sidebar-left') leaf = workspace.getLeftLeaf(false);
-        else if (pos === 'sidebar-right') leaf = workspace.getRightLeaf(false);
-        else if (pos === 'center') leaf = workspace.getLeaf('tab');
-        else leaf = workspace.getRightLeaf(false);
+        if (pos === 'left') leaf = workspace.getLeftLeaf(false);
+        else if (pos === 'right') leaf = workspace.getRightLeaf(false);
+        else leaf = workspace.getLeaf('tab');
 
         if (!leaf) leaf = workspace.getLeaf('tab');
         if (!leaf) return null;
@@ -558,5 +589,72 @@ export default class SmartVideoSummarizerPlugin extends Plugin {
         const newItem = { url, title, platform, timestamp: Date.now(), summaryPath };
         this.settings.history = [newItem, ...this.settings.history].slice(0, this.settings.maxHistoryCount);
         await this.saveSettings();
+    }
+}
+
+// ========== 标题自定义模态框（新增） ==========
+class TitleInputModal extends Modal {
+    private author: string;
+    private onSubmit: (value: string | null) => void;
+    private inputEl!: HTMLInputElement;
+
+    constructor(app: App, author: string, onSubmit: (value: string | null) => void) {
+        super(app);
+        this.author = author;
+        this.onSubmit = onSubmit;
+    }
+
+    onOpen(): void {
+        const { contentEl } = this;
+        contentEl.empty();
+
+        contentEl.createEl('h2', { text: '笔记标题' });
+        contentEl.createEl('p', { text: `视频作者：${this.author}`, cls: 'title-modal-desc' });
+
+        // 输入框占整行
+        const inputWrapper = contentEl.createDiv({ cls: 'title-input-wrapper' });
+        this.inputEl = inputWrapper.createEl('input', {
+            type: 'text',
+            placeholder: '懒一下（默认：用视频原标题）',
+            cls: 'title-input'
+        });
+        this.inputEl.style.width = '100%';
+        this.inputEl.style.marginBottom = '8px';
+        this.inputEl.focus();
+
+        // 小字提示（左对齐，灰色）
+        const hintDiv = contentEl.createDiv({ cls: 'title-hint' });
+        hintDiv.setText('推荐标题：日期-视频作者-题目');
+        hintDiv.style.fontSize = '0.85em';
+        hintDiv.style.color = 'var(--text-muted)';
+        hintDiv.style.marginBottom = '16px';
+
+        // 按钮行（右对齐）
+        const buttonContainer = contentEl.createDiv({ cls: 'title-modal-buttons' });
+        buttonContainer.style.display = 'flex';
+        buttonContainer.style.justifyContent = 'flex-end';
+        buttonContainer.style.gap = '8px';
+
+        const confirmBtn = buttonContainer.createEl('button', { text: '开始生成', cls: 'mod-cta' });
+        const cancelBtn = buttonContainer.createEl('button', { text: '取消' });
+
+        confirmBtn.onclick = () => {
+            const value = this.inputEl.value.trim();
+            this.close();
+            this.onSubmit(value || null);
+        };
+
+        cancelBtn.onclick = () => {
+            this.close();
+            this.onSubmit(null);
+        };
+
+        this.inputEl.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') confirmBtn.click();
+        });
+    }
+
+    onClose(): void {
+        this.contentEl.empty();
     }
 }

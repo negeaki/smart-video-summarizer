@@ -1,36 +1,107 @@
-# Smart Video Summarizer for Obsidian
+Agents Documentation
 
-## Project overview
-Obsidian plugin that generates AI summaries for YouTube and Bilibili videos. Paste a link → fetches captions → calls LLM → creates structured note with embedded video player, timestamp area, and history.
+1. Overview
+The Obsidian Smart Video Summarizer plugin automatically generates structured
+video summaries. Its AI capabilities are powered by a set of collaborative
+agents responsible for transcript analysis, summary generation, tag
+extraction, and metadata handling.
 
-## Key features
-- One-click summarization (ribbon icon, command, or paste trigger)
-- Supports YouTube and Bilibili (captions via youtube-transcript + Bili API)
-- Multiple AI providers: Gemini, DeepSeek, OpenAI-compatible (configurable API key, base URL, model)
-- Built-in sidebar video player (left/right position, iframe embed)
-- Insert timestamp in video summary notes (requires frontmatter `video_url`)
-- No-caption strategies: metadata only, import local subtitle file (.srt/.vtt/.ass), or skip
-- History panel (max entries, open note, replay video, delete)
-- All generated notes stored in configurable folder (default "Video Summaries")
+2. Agents
 
-## Technical notes
-- No `any`, no inline styles, no unused variables – follows Obsidian plugin standards
-- Frontmatter used to identify video notes (`video_url` field)
-- Commands (IDs):
-  - `open-video-summarizer`
-  - `summarize-from-selected-url`
-  - `insert-timestamp-in-video-note`
-  - `open-video-player`
-- Settings: providers, temperature, maxTokens, enableMiniPlayer, playerPosition, noCaptionStrategy, defaultFolder, maxHistoryCount, history
+2.1 Summarizer Agent
+- Receives video metadata (title, author, platform, URL) and transcript text
+  (or a fallback note when captions are missing).
+- Calls an LLM (Gemini / DeepSeek / custom OpenAI-compatible API) to generate
+  a structured Markdown summary.
+- Output: five sections --
+  Core Points, Detailed Summary, Key Conclusions, Technical Terms, Tag Suggestions.
+- Configurable temperature (default 0.7) and max tokens (default 2048).
+- Fallback: when the video has no captions, a notice is inserted and the
+  summary is based on metadata only.
 
-## User guidance
-- User must obtain an API key (e.g., from Google AI Studio for Gemini)
-- After installation, configure API key and provider in settings
-- Summarize a video by clicking the video ribbon icon, or by pasting a YouTube/Bilibili link into a note
-- Generated notes contain structured summary and user area; timestamps can be inserted via command/hotkey
-- The built-in player opens automatically (if enabled) and can be positioned left/right
+2.2 Transcript Fetcher Agent
+- Attempts to fetch official transcripts from YouTube / Bilibili.
+- On failure, follows the user's noCaptionStrategy:
+  * metadata: use placeholder text
+  * local: prompt user to upload a subtitle file (srt, vtt, ass, txt)
+  * skip: abort with an error
+- Returns the transcript text and a flag indicating whether a fallback was
+  used.
 
-## Development
-- Written in TypeScript, built with esbuild
-- Source files: main.ts, settings.ts, api.ts, playerView.ts, transcript.ts
-- Dependencies: obsidian, youtube-transcript
+2.3 Video Info Agent
+- Extracts platform and video ID from the user-provided URL.
+- Fetches title and author via oEmbed (YouTube) or Bilibili API.
+- Falls back to basic placeholders if APIs fail.
+
+2.4 Timestamp Link Handler Agent
+- Parses Markdown timestamp links (e.g. [📌 12:34](https://...)).
+- On click, opens the built-in video player and seeks to the specified time.
+
+3. Workflow
+
+User enters URL
+      │
+      ▼
+ UrlInputModal
+      │
+      ▼
+ Video Info Agent  --> metadata (title, author, ...)
+      │
+      ▼
+ Transcript Fetcher Agent --> transcript or fallback
+      │
+      ├─ (length <= 8000) --> Summarizer Agent directly
+      └─ (long) --> split into chunks --> Summarizer Agent per chunk
+                       │
+                       ▼
+                 merge partial summaries --> Summarizer Agent final pass
+                       │
+                       ▼
+                 Save note (YYYY-MM-DD_Author_custom.md)
+                       │
+                       ▼
+                 Optionally open mini player
+
+4. Prompt Template (core structure)
+
+You are helping to generate a structured video summary.
+
+## Video info
+- Title: {{title}}
+- Author: {{author}}
+- Platform: {{platform}}
+- URL: {{url}}
+
+{{#if usedFallback}}
+> Warning: No captions available; this summary is based on metadata.
+{{else}}
+## Transcript
+{{transcript}}
+{{/if}}
+
+## Output format
+### Core Points (3-5 key ideas, wrap each in [[keyword]])
+### Detailed Summary (2-3 paragraphs, wrap important concepts in [[concept]])
+### Key Conclusions (wrap each in [[conclusion keyword]])
+### Technical Terms (explain terms, wrap each in [[term]])
+### Tag Suggestions
+tags: #tag1 #tag2 #tag3
+
+Output only the Markdown content, no extra commentary.
+
+5. Long Transcript Handling
+- Transcripts longer than 8000 characters are split at sentence boundaries.
+- Each chunk is summarized individually.
+- All partial summaries are merged and re-summarized for the final note.
+
+6. Extensibility
+- The adapter pattern (getApiAdapter) allows adding any OpenAI-compatible API.
+- Agents can be replaced or extended for specific tasks (e.g. chapter
+  detection, keyword extraction).
+- Local LLMs (e.g. Ollama) can be integrated via a custom adapter.
+- Future: workflow engine could conditionally activate different agents.
+
+7. Security Note
+- API keys are stored in plain text inside data.json.
+- Avoid sharing that file and consider excluding .obsidian from cloud sync if
+  privacy is a concern.
